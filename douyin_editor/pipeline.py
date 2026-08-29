@@ -127,18 +127,18 @@ class DouyinAutoPipeline:
             final_output_video = self.config.output_dir / f"output_{video_id}_vi.mp4"
 
             # ==========================================
-            # BƯỚC 2: TIỀN XỬ LÝ (0.70x, BLUR) & WHISPER AI
+            # BƯỚC 2: TRÍCH XUẤT AUDIO SIÊU TỐC & WHISPER AI (KHÔNG RENDER VIDEO)
             # ==========================================
-            notify(2, "Bước 2: Tiền xử lý Video", f"Đang giảm tốc độ {self.config.speed_factor}x và làm mờ phụ đề gốc...")
-            console.print("[bold cyan]▶ BƯỚC 2: Giảm tốc độ 0.70x, làm mờ sub cũ và trích xuất âm thanh...[/bold cyan]")
-            self.preprocessor.process(
+            notify(2, "Bước 2: Trích xuất Audio Siêu Tốc", f"Đang trích xuất audio và giảm tốc độ {self.config.speed_factor}x (không cần render video)...")
+            console.print("[bold cyan]▶ BƯỚC 2: Trích xuất audio 0.70x siêu tốc trong 1-3 giây (Bỏ qua render video)...[/bold cyan]")
+            
+            raw_video_info = self.preprocessor.get_video_info(raw_video)
+            video_width = raw_video_info["width"]
+            video_height = raw_video_info["height"]
+            total_duration = self.preprocessor.extract_audio_for_stt(
                 input_video=raw_video,
-                output_video=slowed_blurred_video,
-                extracted_audio=extracted_audio,
-                progress_callback=lambda p, msg: notify(2, "Bước 2: Tiền xử lý Video", msg)
+                output_audio=extracted_audio
             )
-            video_info = self.preprocessor.get_video_info(slowed_blurred_video)
-            total_duration = video_info["duration"]
 
             notify(2, "Bước 2: Whisper Speech-to-Text", "Đang nhận diện giọng nói tiếng Trung sang file phụ đề SRT...")
             console.print("[bold cyan]▶ BƯỚC 2 (tiếp): Whisper AI nhận diện giọng nói tiếng Trung -> SRT...[/bold cyan]")
@@ -185,32 +185,23 @@ class DouyinAutoPipeline:
             overall_pbar.update(1)
 
             # ==========================================
-            # BƯỚC 6: HARDCODE PHỤ ĐỀ TIẾNG VIỆT CHUẨN TỪNG CÂU
+            # BƯỚC 6, 7 & 8: SINGLE-PASS MASTER RENDER (GỘP TẤT CẢ TRONG 1 LẦN RENDER DUY NHẤT)
             # ==========================================
             sub_count = len(synced_vn_subtitles) if synced_vn_subtitles else len(raw_vn_subtitles)
-            notify(6, "Bước 6: Hardcode Phụ đề", f"Đang burn {sub_count} câu phụ đề khớp giọng nói...")
-            console.print(f"[bold cyan]▶ BƯỚC 6: Hardcode (Burn-in) {sub_count} câu phụ đề tiếng Việt khớp giọng nói vào video...[/bold cyan]")
-            self.burner.burn_subtitles(
-                input_video=slowed_blurred_video,
+            notify(6, "Bước Cuối: Master Render 1-Pass", f"Đang làm chậm 0.70x, làm mờ sub cũ, đóng {sub_count} câu phụ đề & mix nhạc...")
+            console.print(f"[bold cyan]▶ BƯỚC CUỐI: Single-Pass Master Render (0.70x + Blur + Hardsub {sub_count} câu + Lồng tiếng CapCut & BGM)...[/bold cyan]")
+            final_video = self.compositor.render_single_pass_master(
+                raw_video_path=raw_video,
                 srt_file=synced_vietnamese_srt if synced_vietnamese_srt.exists() else raw_vietnamese_srt,
-                output_video=hardsub_video,
-                total_duration_sec=total_duration,
-                progress_callback=lambda p, msg: notify(6, "Bước 6: Hardcode Phụ đề", msg)
-            )
-            overall_pbar.update(1)
-
-            # ==========================================
-            # BƯỚC 7 & 8: RENDER & MASTERING HOÀN THIỆN
-            # ==========================================
-            notify(7, "Bước 7 & 8: Audio Ducking & Render MP4", "Đang hòa âm BGM + TTS và render video MP4 hoàn thiện...")
-            console.print("[bold cyan]▶ BƯỚC 7 & 8: Gộp Video, Hardsub, TTS và BGM thành video cuối...[/bold cyan]")
-            final_video = self.compositor.render_final_video(
-                video_path=hardsub_video,
                 tts_audio_path=tts_synced_audio,
                 bgm_audio_path=bgm_track_path,
-                output_path=final_output_video
+                output_path=final_output_video,
+                total_duration_sec=total_duration,
+                video_width=video_width,
+                video_height=video_height,
+                progress_callback=lambda p, msg: notify(6, "Master Render 1-Pass", msg)
             )
-            overall_pbar.update(2)
+            overall_pbar.update(3)
 
             elapsed_time = time.time() - start_time
             overall_pbar.close()

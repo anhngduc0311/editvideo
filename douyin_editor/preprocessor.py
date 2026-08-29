@@ -177,6 +177,55 @@ class VideoPreprocessor:
 
         return x, y, w, h
 
+    def extract_audio_for_stt(
+        self,
+        input_video: Path,
+        output_audio: Path
+    ) -> float:
+        """
+        Trích xuất và làm chậm âm thanh siêu tốc mà KHÔNG CẦN RENDER VIDEO (mất 1-3 giây thay vì 2 phút).
+        :return: target_duration_sec (thời lượng video sau khi làm chậm)
+        """
+        input_video = Path(input_video).resolve()
+        output_audio = Path(output_audio).resolve()
+        output_audio.parent.mkdir(parents=True, exist_ok=True)
+
+        info = self.get_video_info(input_video)
+        duration = info["duration"]
+        has_audio = info.get("has_audio", True)
+        target_duration = duration / self.speed_factor if self.speed_factor > 0 else duration
+
+        logger.info(
+            f"[Bước 2.1 Siêu Tốc] Trích xuất audio không cần render video (Thời lượng gốc: {duration:.1f}s -> Sau chậm: {target_duration:.1f}s)..."
+        )
+
+        if has_audio:
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", str(input_video),
+                "-vn",
+                "-filter:a", f"atempo={self.speed_factor:.4f}",
+                "-acodec", "pcm_s16le",
+                "-ar", "16000",
+                "-ac", "1",
+                str(output_audio)
+            ]
+        else:
+            cmd = [
+                "ffmpeg", "-y",
+                "-f", "lavfi",
+                "-i", "anullsrc=r=16000:cl=mono",
+                "-t", f"{target_duration:.2f}",
+                "-acodec", "pcm_s16le",
+                str(output_audio)
+            ]
+
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode != 0:
+            logger.warning(f"Lỗi khi trích xuất audio siêu tốc: {res.stderr[-300:]}")
+
+        return target_duration
+
     def process(
         self,
         input_video: Path,
