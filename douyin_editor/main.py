@@ -43,6 +43,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--gui", action="store_true", help="Khoi chay giao dien do hoa (GUI).")
     parser.add_argument("--cookie-str", type=str, help="Chuoi cookie Douyin.")
     parser.add_argument("--cookie-file", type=str, help="Duong dan file cookies.txt.")
+    parser.add_argument("--browser", type=str, choices=["edge", "chrome", "brave", "firefox"], help="Lay cookie truc tiep tu trinh duyet.")
     parser.add_argument(
         "--voice",
         type=str,
@@ -50,8 +51,16 @@ def parse_arguments() -> argparse.Namespace:
         choices=["co-gai-hoat-ngon", "thanh-nien-tu-tin", "nho-ngot-ngao", "mai-truyen-cam", "nu-pho-thong", "kenny-dai-de", "BV074_streaming", "BV075_streaming"],
         help="Giong doc CapCut (co-gai-hoat-ngon, thanh-nien-tu-tin, nho-ngot-ngao, mai-truyen-cam, nu-pho-thong, kenny-dai-de)."
     )
-    parser.add_argument("--speed", type=float, default=0.70, help="Toc do phat lai (mac dinh: 0.70x).")
+    parser.add_argument("--speed", type=float, default=0.70, help="Toc do phat lai de AI doc phu de (mac dinh: 0.70x).")
+    parser.add_argument("--final-speed", type=float, default=1.20, help="Toc do xuat video hoan thien o Buoc 8 (mac dinh: 1.20x).")
     parser.add_argument("--whisper-model", type=str, default="small", choices=["tiny", "base", "small", "medium", "large-v3"], help="Mo hinh Whisper STT.")
+    parser.add_argument(
+        "--sub-style",
+        type=str,
+        default="capcut_default",
+        choices=["none", "capcut_default", "white_thick_black", "white_soft_shadow", "tiktok_yellow_black", "red_white_outline", "orange_white_outline", "blue_white_outline", "green_black_outline", "badge_black_on_white", "badge_white_on_black", "badge_black_on_yellow", "badge_white_on_purple", "cyan_neon_outline", "glitch_3d_shadow", "neon_glow_pink", "neon_glow_yellow", "neon_glow_green"],
+        help="Mau chu phu de CapCut (capcut_default, tiktok_yellow_black, badge_black_on_yellow, neon_glow_pink, ...)."
+    )
     parser.add_argument("--font-size", type=int, default=22, help="Kich thuoc chu phu de.")
     parser.add_argument("--font-name", type=str, default="Arial", help="Ten font chu.")
     parser.add_argument("--no-bgm", action="store_true", help="Tat nhac nen (chi giu lai giong doc TTS).")
@@ -123,8 +132,15 @@ def main():
     cookie_cfg = CookieConfig(
         cookie_str=args.cookie_str,
         cookie_file=Path(args.cookie_file) if args.cookie_file else None,
-        browser_name=args.browser_cookies
+        browser_name=args.browser
     )
+
+    import copy
+    from config import SUBTITLE_PRESETS
+    sub_preset = SUBTITLE_PRESETS.get(args.sub_style, SUBTITLE_PRESETS["capcut_default"])
+    sub_style = copy.copy(sub_preset["style"])
+    sub_style.font_name = args.font_name
+    sub_style.font_size = args.font_size
 
     config = PipelineConfig(
         llm_provider=provider,
@@ -134,6 +150,7 @@ def main():
         gemini_model_name=args.gemini_model,
         whisper_model_size=args.whisper_model,
         speed_factor=args.speed,
+        final_speed=args.final_speed,
         keep_bgm=not args.no_bgm,
         cookie_config=cookie_cfg,
         blur_region=BlurRegion(
@@ -142,14 +159,7 @@ def main():
             blur_power=15,
             enabled=True
         ),
-        subtitle_style=SubtitleStyle(
-            font_name=args.font_name,
-            font_size=args.font_size,
-            primary_color="&H00FFFFFF",
-            outline_color="&H00000000",
-            outline_width=2,
-            margin_v=35
-        ),
+        subtitle_style=sub_style,
         tts_config=TTSConfig(
             voice="BV075_streaming" if args.voice in ("thanh-nien-tu-tin", "BV075_streaming") else (
                 "BV421_vivn_streaming" if args.voice == "nho-ngot-ngao" else (

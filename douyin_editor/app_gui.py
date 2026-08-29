@@ -16,9 +16,10 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import webbrowser
 import customtkinter as ctk
+import copy
 from typing import Callable, Dict, List, Optional, Tuple
 
-from config import BlurRegion, CookieConfig, PipelineConfig, SubtitleStyle, TTSConfig, VOICE_PRESETS
+from config import BlurRegion, CookieConfig, PipelineConfig, SubtitleStyle, SUBTITLE_PRESETS, TTSConfig, VOICE_PRESETS
 from pipeline import DouyinAutoPipeline
 from roi_selector import VisualROISelectorDialog
 
@@ -45,6 +46,11 @@ class DouyinEditorApp(ctk.CTk):
         self.pipeline_thread: threading.Thread = None
         self.is_running = False
         self.last_output_video: Path = None
+
+        # Cấu hình Mẫu Phụ Đề CapCut hiện tại
+        self.selected_sub_preset_id = "capcut_default"
+        self.sub_preset_buttons: Dict[str, ctk.CTkButton] = {}
+        self.current_subtitle_style = copy.copy(SUBTITLE_PRESETS["capcut_default"]["style"])
 
         # Vùng làm mờ hiện tại
         self.current_blur_region = BlurRegion(
@@ -329,11 +335,11 @@ class DouyinEditorApp(ctk.CTk):
 
         ctk.CTkLabel(video_card, text="⚙️ Cài Đặt Tốc Độ & Vùng Làm Mờ Phụ Đề Gốc:", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=12, pady=(10, 6))
 
-        # Speed Slider
+        # Speed Slider (Làm chậm cho TTS)
         speed_row = ctk.CTkFrame(video_card, fg_color="transparent")
-        speed_row.pack(fill="x", padx=12, pady=4)
-        ctk.CTkLabel(speed_row, text="Tốc độ phát:").pack(side="left")
-        self.lbl_speed_val = ctk.CTkLabel(speed_row, text="0.70x (Chậm 30%)", font=ctk.CTkFont(weight="bold"), text_color="#38bdf8")
+        speed_row.pack(fill="x", padx=12, pady=(4, 0))
+        ctk.CTkLabel(speed_row, text="1. Tốc độ dịch & lồng tiếng (Bước 2):").pack(side="left")
+        self.lbl_speed_val = ctk.CTkLabel(speed_row, text="0.70x (Chậm để đọc kịp)", font=ctk.CTkFont(weight="bold"), text_color="#38bdf8")
         self.lbl_speed_val.pack(side="right")
 
         self.slider_speed = ctk.CTkSlider(
@@ -341,7 +347,21 @@ class DouyinEditorApp(ctk.CTk):
             command=self._on_speed_changed
         )
         self.slider_speed.set(0.70)
-        self.slider_speed.pack(fill="x", padx=12, pady=(0, 8))
+        self.slider_speed.pack(fill="x", padx=12, pady=(0, 4))
+
+        # Final Export Speed Slider (Tăng tốc ở Bước 8)
+        final_speed_row = ctk.CTkFrame(video_card, fg_color="transparent")
+        final_speed_row.pack(fill="x", padx=12, pady=(4, 0))
+        ctk.CTkLabel(final_speed_row, text="2. Tốc độ xuất video thành phẩm (Bước 8):").pack(side="left")
+        self.lbl_final_speed_val = ctk.CTkLabel(final_speed_row, text="1.20x (Nhanh & cuốn hút)", font=ctk.CTkFont(weight="bold"), text_color="#10b981")
+        self.lbl_final_speed_val.pack(side="right")
+
+        self.slider_final_speed = ctk.CTkSlider(
+            video_card, from_=1.0, to=1.60, number_of_steps=12,
+            command=lambda v: self.lbl_final_speed_val.configure(text=f"{v:.2f}x (Nhanh & cuốn hút)" if v > 1.05 else f"{v:.2f}x (Chuẩn)")
+        )
+        self.slider_final_speed.set(1.20)
+        self.slider_final_speed.pack(fill="x", padx=12, pady=(0, 8))
 
         # Checkbox Blur
         self.chk_blur = ctk.CTkCheckBox(video_card, text="Làm mờ phụ đề tiếng Trung gốc (Boxblur)", font=ctk.CTkFont(weight="bold"))
@@ -463,25 +483,111 @@ class DouyinEditorApp(ctk.CTk):
         self.slider_bgm_vol.set(0.25)
         self.slider_bgm_vol.pack(fill="x", padx=12, pady=(0, 10))
 
-        # 6. Card Phụ đề tiếng Việt (Font & Style)
+        # 6. Card Phụ đề tiếng Việt (CapCut Subtitle Style Grid)
         sub_card = ctk.CTkFrame(left_scroll, corner_radius=8)
         sub_card.pack(fill="x", padx=5, pady=5)
 
-        ctk.CTkLabel(sub_card, text="✍️ Kiểu Dáng Phụ Đề Tiếng Việt (Hardsub):", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=12, pady=(10, 6))
+        ctk.CTkLabel(sub_card, text="✍️ Mẫu Chữ Phụ Đề (CapCut Text Presets):", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=12, pady=(10, 4))
 
+        # Grid mẫu chữ kiểu CapCut (6 cột)
+        grid_frame = ctk.CTkFrame(sub_card, fg_color="#18181b", corner_radius=8)
+        grid_frame.pack(fill="x", padx=12, pady=(4, 6))
+
+        for col in range(6):
+            grid_frame.grid_columnconfigure(col, weight=1)
+
+        self.sub_preset_buttons = {}
+        for idx, (p_id, p_val) in enumerate(SUBTITLE_PRESETS.items()):
+            row = idx // 6
+            col = idx % 6
+            is_selected = (p_id == self.selected_sub_preset_id)
+            btn = ctk.CTkButton(
+                grid_frame,
+                text=p_val.get("preview_text", "Aa"),
+                font=ctk.CTkFont(size=15, weight="bold"),
+                width=52,
+                height=42,
+                corner_radius=8,
+                fg_color=p_val["bg_color"],
+                text_color=p_val["fg_color"],
+                border_color="#06b6d4" if is_selected else (p_val["border_color"] if p_val["border_color"] != "transparent" else "#3f3f46"),
+                border_width=3 if is_selected else 2,
+                hover_color=p_val["bg_color"],
+                command=lambda pid=p_id: self._select_subtitle_preset(pid)
+            )
+            btn.grid(row=row, column=col, padx=3, pady=3, sticky="ew")
+            self.sub_preset_buttons[p_id] = btn
+
+        self.lbl_selected_sub_preset = ctk.CTkLabel(
+            sub_card,
+            text=f"Kiểu đang chọn: 🔥 {SUBTITLE_PRESETS[self.selected_sub_preset_id]['name']}",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#38bdf8"
+        )
+        self.lbl_selected_sub_preset.pack(anchor="w", padx=12, pady=(2, 6))
+
+        # Font chữ & Cỡ chữ
         sub_row = ctk.CTkFrame(sub_card, fg_color="transparent")
-        sub_row.pack(fill="x", padx=12, pady=(2, 10))
+        sub_row.pack(fill="x", padx=12, pady=(2, 4))
         sub_row.grid_columnconfigure((0, 1), weight=1)
 
         ctk.CTkLabel(sub_row, text="Font chữ:").grid(row=0, column=0, sticky="w")
-        self.cmb_font = ctk.CTkComboBox(sub_row, values=["Arial", "Tahoma", "Verdana", "Segoe UI", "Montserrat"])
+        self.cmb_font = ctk.CTkComboBox(
+            sub_row,
+            values=["Arial", "Montserrat", "Roboto", "Tahoma", "Verdana", "Segoe UI"],
+            command=lambda _: self._update_sub_preview_banner()
+        )
         self.cmb_font.set("Arial")
         self.cmb_font.grid(row=1, column=0, sticky="ew", padx=(0, 6))
 
         ctk.CTkLabel(sub_row, text="Cỡ chữ (Size):").grid(row=0, column=1, sticky="w")
-        self.cmb_font_size = ctk.CTkComboBox(sub_row, values=["18", "20", "22", "24", "26", "28", "32"])
+        self.cmb_font_size = ctk.CTkComboBox(
+            sub_row,
+            values=["18", "20", "22", "24", "26", "28", "32", "36"],
+            command=lambda _: self._update_sub_preview_banner()
+        )
         self.cmb_font_size.set("22")
         self.cmb_font_size.grid(row=1, column=1, sticky="ew", padx=(6, 0))
+
+        # Vị trí mép dưới (Margin V) & In đậm
+        margin_row = ctk.CTkFrame(sub_card, fg_color="transparent")
+        margin_row.pack(fill="x", padx=12, pady=(4, 6))
+        margin_row.grid_columnconfigure((0, 1), weight=1)
+
+        pos_header = ctk.CTkFrame(margin_row, fg_color="transparent")
+        pos_header.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        ctk.CTkLabel(pos_header, text="Vị trí mép dưới:").pack(side="left")
+        self.lbl_margin_v = ctk.CTkLabel(pos_header, text="35px", text_color="#38bdf8")
+        self.lbl_margin_v.pack(side="right")
+
+        self.slider_margin_v = ctk.CTkSlider(
+            margin_row, from_=15, to=85, number_of_steps=14,
+            command=lambda v: self.lbl_margin_v.configure(text=f"{int(v)}px")
+        )
+        self.slider_margin_v.set(35)
+        self.slider_margin_v.grid(row=1, column=0, sticky="ew", padx=(0, 6))
+
+        self.chk_bold_sub = ctk.CTkCheckBox(
+            margin_row,
+            text="In đậm chữ (Bold)",
+            font=ctk.CTkFont(size=12),
+            command=self._update_sub_preview_banner
+        )
+        self.chk_bold_sub.select()
+        self.chk_bold_sub.grid(row=1, column=1, sticky="w", padx=(6, 0))
+
+        # Live Subtitle Preview Banner
+        self.preview_sub_frame = ctk.CTkFrame(sub_card, corner_radius=6, border_width=1, border_color="#3f3f46", fg_color="#18181b")
+        self.preview_sub_frame.pack(fill="x", padx=12, pady=(6, 12))
+
+        self.lbl_preview_sub_text = ctk.CTkLabel(
+            self.preview_sub_frame,
+            text="[Phụ đề mẫu tiếng Việt chuẩn CapCut]",
+            font=ctk.CTkFont(family="Arial", size=14, weight="bold"),
+            text_color="#ffffff",
+            pady=8
+        )
+        self.lbl_preview_sub_text.pack()
 
         # -------------------------------------------------------------
         # CỘT PHẢI: TIẾN TRÌNH 8 BƯỚC & LOG CONSOLE
@@ -824,6 +930,56 @@ class DouyinEditorApp(ctk.CTk):
         )
         return dlg
 
+    def _select_subtitle_preset(self, preset_id: str):
+        """Xử lý khi người dùng click chọn một mẫu phụ đề CapCut trong Grid"""
+        if preset_id not in SUBTITLE_PRESETS:
+            return
+        p_info = SUBTITLE_PRESETS[preset_id]
+        self.selected_sub_preset_id = preset_id
+
+        # Cập nhật style hiện tại
+        self.current_subtitle_style = copy.copy(p_info["style"])
+        if hasattr(self, "cmb_font"):
+            self.current_subtitle_style.font_name = self.cmb_font.get()
+        if hasattr(self, "cmb_font_size"):
+            self.current_subtitle_style.font_size = int(self.cmb_font_size.get())
+        if hasattr(self, "slider_margin_v"):
+            self.current_subtitle_style.margin_v = int(self.slider_margin_v.get())
+        if hasattr(self, "chk_bold_sub"):
+            self.current_subtitle_style.bold = 1 if self.chk_bold_sub.get() else 0
+
+        # Cập nhật viền highlight cho các nút trong Grid (giống CapCut)
+        for pid, btn in self.sub_preset_buttons.items():
+            if pid == preset_id:
+                btn.configure(border_color="#06b6d4", border_width=3)
+            else:
+                orig_bc = SUBTITLE_PRESETS[pid]["border_color"]
+                btn.configure(border_color=orig_bc if orig_bc != "transparent" else "#3f3f46", border_width=2)
+
+        self.lbl_selected_sub_preset.configure(text=f"Kiểu đang chọn: 🔥 {p_info['name']}")
+        self._update_sub_preview_banner()
+
+    def _update_sub_preview_banner(self):
+        """Cập nhật banner xem trước phụ đề theo thời gian thực (Live Preview)"""
+        if not hasattr(self, "lbl_preview_sub_text") or not hasattr(self, "preview_sub_frame"):
+            return
+        pid = getattr(self, "selected_sub_preset_id", "capcut_default")
+        p_info = SUBTITLE_PRESETS.get(pid, SUBTITLE_PRESETS["capcut_default"])
+
+        font_name = self.cmb_font.get() if hasattr(self, "cmb_font") else "Arial"
+        font_size = int(self.cmb_font_size.get()) if hasattr(self, "cmb_font_size") else 22
+        is_bold = "bold" if (hasattr(self, "chk_bold_sub") and self.chk_bold_sub.get()) else "normal"
+
+        is_badge = (p_info["style"].border_style == 3)
+        self.preview_sub_frame.configure(
+            fg_color=p_info["bg_color"] if is_badge else "#18181b",
+            border_color=p_info["border_color"] if p_info["border_color"] != "transparent" else "#3f3f46"
+        )
+        self.lbl_preview_sub_text.configure(
+            text_color=p_info["fg_color"],
+            font=ctk.CTkFont(family=font_name, size=max(13, min(font_size - 4, 18)), weight=is_bold)
+        )
+
     def _append_log(self, message: str, level: str = "INFO"):
         ts = time.strftime("%H:%M:%S")
         formatted_msg = f"[{ts}] [{level}] {message}\n"
@@ -867,14 +1023,13 @@ class DouyinEditorApp(ctk.CTk):
 
         raw_url = self.url_textbox.get("1.0", "end").strip()
         if not raw_url:
-            messagebox.showwarning("Thiếu thông tin", "Vui lòng nhập hoặc dán link video Douyin!")
+            messagebox.showwarning("Cảnh báo", "Vui lòng nhập đường link Video Douyin!")
             return
 
         cur_provider = "deepseek" if "DeepSeek" in self.seg_provider.get() else "gemini"
         api_key = self.key_entry.get().strip()
         if not api_key:
-            prov_name = "DeepSeek" if cur_provider == "deepseek" else "Google Gemini"
-            messagebox.showwarning("Thiếu API Key", f"Vui lòng nhập {prov_name} API Key để dịch thuật và STT!")
+            messagebox.showwarning("Cảnh báo", f"Vui lòng nhập API Key cho {cur_provider.upper()}!")
             return
 
         self._save_settings()
@@ -882,9 +1037,9 @@ class DouyinEditorApp(ctk.CTk):
         cookie_tab = self.cookie_tabview.get()
         cookie_cfg = CookieConfig()
 
-        if cookie_tab == "Dán Cookie Text":
+        if cookie_tab == "Nhập chuỗi Cookie":
             c_text = self.cookie_textbox.get("1.0", "end").strip()
-            if c_text and not c_text.startswith("passport_csrf_token=..."):
+            if c_text:
                 cookie_cfg.cookie_str = c_text
         elif cookie_tab == "File cookies.txt":
             if getattr(self, "selected_cookie_file_path", ""):
@@ -905,6 +1060,7 @@ class DouyinEditorApp(ctk.CTk):
                 break
 
         speed_factor = float(self.slider_speed.get())
+        final_speed = float(self.slider_final_speed.get()) if hasattr(self, "slider_final_speed") else 1.20
         keep_bgm = bool(self.chk_bgm.get())
         bgm_vol = float(self.slider_bgm_vol.get())
         font_name = self.cmb_font.get()
@@ -914,6 +1070,15 @@ class DouyinEditorApp(ctk.CTk):
 
         self.current_blur_region.enabled = blur_enabled
 
+        # Xây dựng SubtitleStyle hoàn chỉnh từ mẫu đang chọn và font/size/margin
+        sub_style = copy.copy(getattr(self, "current_subtitle_style", SUBTITLE_PRESETS["capcut_default"]["style"]))
+        sub_style.font_name = font_name
+        sub_style.font_size = font_size
+        if hasattr(self, "slider_margin_v"):
+            sub_style.margin_v = int(self.slider_margin_v.get())
+        if hasattr(self, "chk_bold_sub"):
+            sub_style.bold = 1 if self.chk_bold_sub.get() else 0
+
         config = PipelineConfig(
             llm_provider=cur_provider,
             deepseek_api_key=api_key if cur_provider == "deepseek" else self.saved_deepseek_key,
@@ -921,18 +1086,12 @@ class DouyinEditorApp(ctk.CTk):
             gemini_api_key=api_key if cur_provider == "gemini" else self.saved_gemini_key,
             gemini_model_name=self.cmb_ai_model.get().strip() if cur_provider == "gemini" else self.saved_gemini_model,
             speed_factor=speed_factor,
+            final_speed=final_speed,
             keep_bgm=keep_bgm,
             bgm_volume=bgm_vol,
             cookie_config=cookie_cfg,
             blur_region=self.current_blur_region,
-            subtitle_style=SubtitleStyle(
-                font_name=font_name,
-                font_size=font_size,
-                primary_color="&H00FFFFFF",
-                outline_color="&H00000000",
-                outline_width=2,
-                margin_v=35
-            ),
+            subtitle_style=sub_style,
             tts_config=TTSConfig(
                 voice=voice_code,
                 resource_id=res_id,

@@ -5,6 +5,7 @@ compositor.py - Final Audio Mixing & High-Quality Video Rendering (Single-Pass 1
 import json
 import logging
 from pathlib import Path
+import re
 import subprocess
 from typing import Callable, Optional
 from tqdm import tqdm
@@ -19,6 +20,7 @@ class VideoCompositor:
     """
     Module tổng hợp cuối cùng:
     - Hỗ trợ chế độ Single-Pass Master Render: Gộp làm chậm 0.70x, làm mờ sub cũ, đóng sub tiếng Việt và mix âm thanh trong 1 lần duy nhất.
+    - Hỗ trợ tăng tốc video xuất bản ở Bước 8 lên 1.2x (hoặc tùy chỉnh) với âm thanh giữ nguyên cao độ (pitch) và phụ đề đồng bộ 100%.
     - Tiết kiệm 50-60% thời gian render và giữ video sắc nét 100%.
     """
 
@@ -33,6 +35,39 @@ class VideoCompositor:
             raw_str = raw_str[0] + "\\:" + raw_str[2:]
         return raw_str.replace("'", "\\'").replace("[", "\\[").replace("]", "\\]")
 
+    @staticmethod
+    def scale_srt_file(input_srt: Path, output_srt: Path, speed: float) -> Path:
+        """Căn chỉnh lại toàn bộ mốc thời gian phụ đề theo tốc độ tăng tốc final_speed (ví dụ 1.2x)"""
+        if abs(speed - 1.0) < 0.001 or not input_srt.exists():
+            return input_srt
+        content = input_srt.read_text(encoding="utf-8")
+        if not content.strip():
+            return input_srt
+
+        def repl(match):
+            h1, m1, s1, ms1, h2, m2, s2, ms2 = map(int, match.groups())
+            t1 = (h1 * 3600 + m1 * 60 + s1 + ms1 / 1000.0) / speed
+            t2 = (h2 * 3600 + m2 * 60 + s2 + ms2 / 1000.0) / speed
+
+            def fmt(t):
+                if t < 0:
+                    t = 0.0
+                h = int(t // 3600)
+                m = int((t % 3600) // 60)
+                s = int(t % 60)
+                ms = int(round((t - int(t)) * 1000))
+                if ms >= 1000:
+                    s += 1
+                    ms -= 1000
+                return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+            return f"{fmt(t1)} --> {fmt(t2)}"
+
+        pattern = r"(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})"
+        scaled_content = re.sub(pattern, repl, content)
+        output_srt.write_text(scaled_content, encoding="utf-8")
+        return output_srt
+
     def build_force_style_string(self) -> str:
         s = self.config.subtitle_style
         style_parts = [
@@ -45,7 +80,8 @@ class VideoCompositor:
             f"Outline={s.outline_width}",
             f"Shadow={s.shadow}",
             f"MarginV={s.margin_v}",
-            f"Alignment={s.alignment}"
+            f"Alignment={s.alignment}",
+            f"BorderStyle={getattr(s, 'border_style', 1)}"
         ]
         return ",".join(style_parts)
 
@@ -77,10 +113,10 @@ class VideoCompositor:
         """
         Quy trình Render 1-Pass Đỉnh Cao:
         Gộp tất cả các tác vụ vào 1 lần render duy nhất:
-        - Làm chậm video 0.70x (setpts)
+        - Làm chậm video 0.70x (setpts) và tăng tốc xuất bản 1.2x ở Bước 8
         - Làm mờ phụ đề cũ (crop + boxblur + overlay)
-        - Đóng cứng phụ đề tiếng Việt (subtitles filter)
-        - Hòa âm giọng đọc CapCut + Nhạc nền (TTS + BGM amix)
+        - Đóng cứng phụ đề tiếng Việt (subtitles filter chuẩn tốc độ 1.2x)
+        - Hòa âm giọng đọc CapCut + Nhạc nền (TTS + BGM amix + atempo=1.2x)
         """
         raw_video_path = Path(raw_video_path).resolve()
         srt_file = Path(srt_file).resolve()
@@ -96,10 +132,23 @@ class VideoCompositor:
         has_bgm = bgm_audio_path is not None and Path(bgm_audio_path).exists()
         has_subtitles = srt_file.exists() and len(srt_file.read_text(encoding="utf-8").strip()) > 0
 
-        pts_mult = 1.0 / self.config.speed_factor
+        final_speed = float(getattr(self.config, "final_speed", 1.20))
+        if final_speed <= 0:
+            final_speed = 1.0
+
+        # Tính toán PTS hiệu dụng: Kết hợp làm chậm 0.70x và tăng tốc xuất bản 1.2x
+        pts_mult = (1.0 / self.config.speed_factor) / final_speed
+        real_target_duration = total_duration_sec / final_speed if final_speed > 0 else total_duration_sec
+
         x, y, w, h = self.calculate_blur_box(video_width, video_height)
         power = self.config.blur_region.blur_power
         safe_power = max(1, min(power, min(w, h) // 4, 25))
+
+        # Căn chỉnh lại file SRT theo tốc độ 1.2x
+        burn_srt_file = srt_file
+        if has_subtitles and abs(final_speed - 1.0) >= 0.001:
+            scaled_srt_path = output_path.parent / f"{output_path.stem}_scaled_{final_speed}x.srt"
+            burn_srt_file = self.scale_srt_file(srt_file, scaled_srt_path, final_speed)
 
         # 1. Xây dựng video filter
         v_filter_parts = []
@@ -107,14 +156,14 @@ class VideoCompositor:
             v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS,format=yuv420p,split=2[v_speed][v_crop];")
             v_filter_parts.append(f"[v_crop]crop={w}:{h}:{x}:{y},boxblur={safe_power}:5[v_blurred];")
             if has_subtitles:
-                escaped_srt = self._escape_ffmpeg_path(srt_file)
+                escaped_srt = self._escape_ffmpeg_path(burn_srt_file)
                 force_style = self.build_force_style_string()
                 v_filter_parts.append(f"[v_speed][v_blurred]overlay={x}:{y},subtitles='{escaped_srt}':force_style='{force_style}'[v_out]")
             else:
                 v_filter_parts.append(f"[v_speed][v_blurred]overlay={x}:{y}[v_out]")
         else:
             if has_subtitles:
-                escaped_srt = self._escape_ffmpeg_path(srt_file)
+                escaped_srt = self._escape_ffmpeg_path(burn_srt_file)
                 force_style = self.build_force_style_string()
                 v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS,format=yuv420p,subtitles='{escaped_srt}':force_style='{force_style}'[v_out]")
             else:
@@ -122,9 +171,11 @@ class VideoCompositor:
 
         v_filter_str = "".join(v_filter_parts)
 
-        # 2. Xây dựng audio filter
+        # 2. Xây dựng audio filter (kèm atempo=final_speed giữ nguyên pitch)
         preset = "veryfast" if self.config.video_preset in ["medium", "slow"] else self.config.video_preset
         crf = str(min(self.config.video_crf, 20))
+
+        atempo_filter = f",atempo={final_speed:.4f}" if abs(final_speed - 1.0) >= 0.001 else ""
 
         if has_bgm:
             bgm_vol = self.config.bgm_volume
@@ -132,7 +183,7 @@ class VideoCompositor:
             a_filter_str = (
                 f";[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume={tts_vol}[tts];"
                 f"[2:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume={bgm_vol}[bgm];"
-                f"[tts][bgm]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[a_out]"
+                f"[tts][bgm]amix=inputs=2:duration=first:dropout_transition=2:normalize=0{atempo_filter}[a_out]"
             )
             full_filter = v_filter_str + a_filter_str
             cmd = [
@@ -153,7 +204,7 @@ class VideoCompositor:
                 str(output_path)
             ]
         else:
-            a_filter_str = ";[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[a_out]"
+            a_filter_str = f";[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo{atempo_filter}[a_out]"
             full_filter = v_filter_str + a_filter_str
             cmd = [
                 "ffmpeg", "-y",
@@ -172,11 +223,11 @@ class VideoCompositor:
                 str(output_path)
             ]
 
-        logger.info(f"[Master Render 1-Pass] Bắt đầu render video xuất bản (Thời lượng đích: {total_duration_sec:.1f}s)...")
+        logger.info(f"[Master Render 1-Pass] Render video hoàn thiện với tốc độ {final_speed}x (Thời lượng đích: {real_target_duration:.1f}s)...")
         run_ffmpeg_with_progress(
             cmd=cmd,
-            total_duration_sec=total_duration_sec,
-            desc="[Bước Cuối] Render Master Video (1-Pass)",
+            total_duration_sec=real_target_duration,
+            desc=f"[Bước 8] Render Master Video ({final_speed}x)",
             progress_callback=progress_callback
         )
 

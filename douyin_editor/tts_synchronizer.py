@@ -24,6 +24,9 @@ from capcut_tts_api import CapCutClient
 from config import PipelineConfig, TTSConfig, VOICE_PRESETS
 from transcriber import SubtitleItem
 
+from concurrent.futures import ThreadPoolExecutor
+from requests.adapters import HTTPAdapter
+
 logger = logging.getLogger(__name__)
 
 
@@ -46,11 +49,19 @@ def format_timestamp(seconds: float) -> str:
 class CapCutTTSEngine:
     """
     Engine giao tiếp trực tiếp với hệ thống ByteDance / CapCut TTS Server.
-    Hỗ trợ sinh audio song song và hàng loạt (Batch Processing) tốc độ cao.
+    Hỗ trợ sinh audio song song, kết nối Pool và tải đa luồng tốc độ cao chống Timeout.
     """
 
     def __init__(self):
         self.client = CapCutClient()
+        self.session = requests.Session()
+        adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=2)
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
+        self.session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "*/*"
+        })
 
     def synthesize_phrases(
         self,
@@ -61,7 +72,7 @@ class CapCutTTSEngine:
         max_retries: int = 3
     ) -> List[Tuple[str, Optional[bytes], int]]:
         """
-        Gửi danh sách các câu tới CapCut TTS API trong 1 request duy nhất.
+        Gửi danh sách các câu tới CapCut TTS API trong 1 request duy nhất và tải song song các file audio.
         :return: List of (text, audio_bytes, duration_ms)
         """
         if not texts:
@@ -85,7 +96,7 @@ class CapCutTTSEngine:
                     rate=rate
                 )
 
-                resp = requests.post(url, headers=headers, data=body, timeout=12)
+                resp = self.session.post(url, headers=headers, data=body, timeout=(5, 15))
                 resp_json = resp.json()
 
                 if "data" not in resp_json or not resp_json["data"].get("tasks"):
@@ -98,12 +109,12 @@ class CapCutTTSEngine:
                 # Polling chờ kết quả
                 completed = False
                 payload_data = None
-                for _ in range(15):
-                    time.sleep(1.0)
+                for _ in range(20):
+                    time.sleep(0.8)
                     q_url, q_headers, q_body = self.client.build_query_request(
                         task_id, task_token, "sami_text_to_speech"
                     )
-                    q_resp = requests.post(q_url, headers=q_headers, data=q_body, timeout=10)
+                    q_resp = self.session.post(q_url, headers=q_headers, data=q_body, timeout=(5, 15))
                     q_json = q_resp.json()
 
                     if q_json.get("data", {}).get("tasks"):
@@ -118,25 +129,37 @@ class CapCutTTSEngine:
                 if not completed or not payload_data:
                     raise TimeoutError("CapCut TTS polling timed out")
 
-                # Tải audio streams
+                # Tải song song toàn bộ audio streams qua ThreadPoolExecutor
                 sub_list = payload_data.get("audio_subtitles", [])
-                results: List[Tuple[str, Optional[bytes], int]] = []
 
-                for idx, sub in enumerate(sub_list):
+                def _fetch_single_audio(item_tuple):
+                    idx, sub = item_tuple
                     t_text = sub.get("text", texts[idx] if idx < len(texts) else "")
                     audio_url = sub.get("speech_url")
                     duration_ms = sub.get("duration", 0)
 
                     audio_bytes = None
                     if audio_url:
-                        try:
-                            audio_resp = requests.get(audio_url, timeout=10)
-                            if audio_resp.status_code == 200 and len(audio_resp.content) > 0:
-                                audio_bytes = audio_resp.content
-                        except Exception as dl_err:
-                            logger.warning(f"Lỗi tải audio câu '{t_text}': {dl_err}")
+                        for dl_attempt in range(1, 4):
+                            try:
+                                audio_resp = self.session.get(audio_url, timeout=(5, 25))
+                                if audio_resp.status_code == 200 and len(audio_resp.content) > 0:
+                                    audio_bytes = audio_resp.content
+                                    break
+                            except Exception as dl_err:
+                                if dl_attempt == 3:
+                                    logger.warning(f"Lỗi tải audio câu '{t_text}' (Lần {dl_attempt}/3): {dl_err}")
+                                time.sleep(0.5 * dl_attempt)
 
-                    results.append((t_text, audio_bytes, duration_ms))
+                    return (idx, t_text, audio_bytes, duration_ms)
+
+                workers = min(8, len(sub_list) or 1)
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    fetched_items = list(pool.map(_fetch_single_audio, enumerate(sub_list)))
+
+                # Sắp xếp đúng thứ tự ban đầu
+                fetched_items.sort(key=lambda x: x[0])
+                results = [(item[1], item[2], item[3]) for item in fetched_items]
 
                 return results
 

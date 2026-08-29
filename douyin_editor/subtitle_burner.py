@@ -44,7 +44,8 @@ class SubtitleBurner:
             f"Outline={s.outline_width}",
             f"Shadow={s.shadow}",
             f"MarginV={s.margin_v}",
-            f"Alignment={s.alignment}"
+            f"Alignment={s.alignment}",
+            f"BorderStyle={getattr(s, 'border_style', 1)}"
         ]
         return ",".join(style_parts)
 
