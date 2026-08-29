@@ -1,0 +1,29 @@
+# ==============================================================================
+# REQUIREMENTS.TXT - Automated Douyin Video Editing & AI Translation Tool
+# ==============================================================================
+
+# Core Video & Audio Processing
+yt-dlp>=2024.8.6
+ffmpeg-python>=0.2.0
+static-ffmpeg>=3.0
+pydub>=0.25.1
+audioop-lts>=0.2.0
+numpy>=1.24.3
+requests>=2.31.0
+
+# AI Speech-to-Text & Translation
+SpeechRecognition>=3.10.0
+openai-whisper>=20231117
+google-generativeai>=0.8.0
+
+# AI Text-to-Speech (CapCut Native Neural Voices)
+capcut-tts-api>=1.0.0
+
+# Audio Separation (Vocals / BGM Isolation)
+demucs>=4.0.1
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# UI, Logging & Progress Bars
+tqdm>=4.66.5
+rich>=13.8.0

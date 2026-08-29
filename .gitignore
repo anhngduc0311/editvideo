@@ -1,0 +1,120 @@
+# ==============================================================================
+# Python Bytecode & Cache
+# ==============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ==============================================================================
+# Douyin Video Editor - Media & Working Directories
+# ==============================================================================
+# Bỏ qua các thư mục video tải về, video render và thư mục làm việc tạm thời
+/douyin_editor/downloads/
+/douyin_editor/output/
+/douyin_editor/outputs/
+/douyin_editor/workspace_temp/
+/douyin_editor/temp/
+downloads/
+output/
+outputs/
+workspace_temp/
+temp/
+
+# Bỏ qua các file video/audio/phụ đề sinh ra trong quá trình render
+*.mp4
+*.m4v
+*.mkv
+*.mov
+*.avi
+*.webm
+*.wav
+*.flac
+*.m4a
+*.srt
+
+# Giữ lại các file giọng mẫu chuẩn trong thư mục tts/
+!tts/
+!tts/**
+
+# Bỏ qua các file test audio sinh ra ở root
+/capcut_*.mp3
+/sample_*.mp3
+/test_*.mp3
+/test_*.wav
+/test_*.srt
+/test_*.mp4
+
+# ==============================================================================
+# Secrets, Cookies & User Configs
+# ==============================================================================
+.env
+*.env
+.env.*
+cookies.txt
+cookie.txt
+*.cookie
+*.cookies
+.douyin_editor_config.json
+device.json
+
+# ==============================================================================
+# Model Weights & AI Caches (Whisper, Demucs, etc.)
+# ==============================================================================
+.cache/
+models/
+*.pt
+*.pth
+*.bin
+*.onnx
+*.safetensors
+demucs/
+
+# ==============================================================================
+# Logs & Testing
+# ==============================================================================
+*.log
+logs/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ==============================================================================
+# IDEs & System Files
+# ==============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
