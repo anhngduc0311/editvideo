@@ -12,10 +12,35 @@ from typing import List, Optional
 import requests
 from tqdm import tqdm
 
-from config import PipelineConfig
+from config import PipelineConfig, TRANSLATION_TOPIC_PRESETS
 from transcriber import SubtitleItem
 
 logger = logging.getLogger(__name__)
+
+
+def build_translation_system_instruction(config: PipelineConfig) -> str:
+    """Tạo System Instruction chuyên sâu với bối cảnh chủ đề (ví dụ: Minecraft cho trẻ em)."""
+    topic_id = getattr(config, "topic_preset", "minecraft_kids")
+    custom_prompt = getattr(config, "custom_translation_prompt", None)
+
+    if custom_prompt and custom_prompt.strip():
+        topic_context = f"BỐI CẢNH & YÊU CẦU ĐẶC THÙ (TÙY CHỈNH):\n{custom_prompt.strip()}"
+    else:
+        preset = TRANSLATION_TOPIC_PRESETS.get(topic_id, TRANSLATION_TOPIC_PRESETS.get("minecraft_kids", {}))
+        topic_context = preset.get("prompt_context", "")
+
+    return (
+        "Bạn là chuyên gia biên dịch phụ đề video ngắn (Douyin/TikTok/YouTube Shorts) từ Tiếng Trung sang Tiếng Việt xuất sắc nhất.\n"
+        "Nhiệm vụ: Dịch toàn bộ nội dung trong đoạn phụ đề SRT sau sang tiếng Việt chuẩn, tự nhiên, cuốn hút, đúng ngữ cảnh chủ đề.\n\n"
+        f"{topic_context}\n\n"
+        "QUY TẮC BẮT BUỘC:\n"
+        "1. GIỮ NGUYÊN TUYỆT ĐỐI số thứ tự (index) của từng câu phụ đề.\n"
+        "2. GIỮ NGUYÊN TUYỆT ĐỐI timeline mốc thời gian dạng '00:00:00,000 --> 00:00:00,000'.\n"
+        "3. Không thêm bớt câu, không gộp câu, không xóa timeline.\n"
+        "4. DỊCH TRỌN VẸN HẾT CÂU: Mỗi câu dịch phải là một câu nói hoàn chỉnh, liền mạch, có đầy đủ ý nghĩa và kết thúc bằng dấu câu phù hợp (!, ?, .). Tuyệt đối không dịch dở dang, không ngắt cụt lủn để giọng đọc AI lồng tiếng được trọn vẹn, truyền cảm và hay nhất.\n"
+        "5. Câu dịch tiếng Việt cần tự nhiên, giàu cảm xúc, đúng ngữ cảnh chủ đề, độ dài vừa phải (khoảng 6-12 từ) để giọng đọc AI đọc kịp nhịp video.\n"
+        "6. CHỈ TRẢ VỀ DUY NHẤT nội dung file SRT hoàn chỉnh. Không thêm lời chào, không kèm giải thích, không bọc trong thẻ markdown ```."
+    )
 
 
 def clean_markdown_response(text: str) -> str:
@@ -350,16 +375,7 @@ class DeepSeekTranslator:
             "Content-Type": "application/json"
         }
 
-        system_instruction = (
-            "Bạn là chuyên gia biên dịch phụ đề video ngắn (Douyin/TikTok) từ Tiếng Trung sang Tiếng Việt.\n"
-            "Nhiệm vụ: Dịch toàn bộ nội dung trong đoạn phụ đề SRT sau sang tiếng Việt chuẩn, tự nhiên, hấp dẫn, đúng ngữ cảnh video.\n\n"
-            "QUY TẮC BẮT BUỘC:\n"
-            "1. GIỮ NGUYÊN TUYỆT ĐỐI số thứ tự (index) của từng câu phụ đề.\n"
-            "2. GIỮ NGUYÊN TUYỆT ĐỐI timeline mốc thời gian dạng '00:00:00,000 --> 00:00:00,000'.\n"
-            "3. Không thêm bớt câu, không gộp câu, không xóa timeline.\n"
-            "4. Câu dịch tiếng Việt cần ngắn gọn, súc tích, tự nhiên, phù hợp nhịp điệu video ngắn.\n"
-            "5. CHỈ TRẢ VỀ DUY NHẤT nội dung file SRT hoàn chỉnh. Không thêm lời chào, không kèm giải thích, không bọc trong thẻ markdown ```."
-        )
+        system_instruction = build_translation_system_instruction(self.config)
 
         last_error = None
         for model in unique_models:
@@ -623,16 +639,7 @@ class GeminiTranslator:
 
         final_translated_items: List[SubtitleItem] = []
 
-        system_instruction = (
-            "Bạn là chuyên gia biên dịch phụ đề video ngắn (Douyin/TikTok) từ Tiếng Trung sang Tiếng Việt.\n"
-            "Nhiệm vụ: Dịch toàn bộ nội dung trong đoạn phụ đề SRT sau sang tiếng Việt chuẩn, tự nhiên, hấp dẫn, đúng ngữ cảnh video.\n\n"
-            "QUY TẮC BẮT BUỘC:\n"
-            "1. GIỮ NGUYÊN TUYỆT ĐỐI số thứ tự (index) của từng câu phụ đề.\n"
-            "2. GIỮ NGUYÊN TUYỆT ĐỐI timeline mốc thời gian dạng '00:00:00,000 --> 00:00:00,000'.\n"
-            "3. Không thêm bớt câu, không gộp câu, không xóa timeline.\n"
-            "4. Câu dịch tiếng Việt cần ngắn gọn, súc tích, phù hợp nhịp điệu video ngắn.\n"
-            "5. CHỈ TRẢ VỀ DUY NHẤT nội dung file SRT hoàn chỉnh. Không thêm lời chào, không kèm giải thích, không bọc trong thẻ markdown ```."
-        )
+        system_instruction = build_translation_system_instruction(self.config)
 
         with tqdm(total=total_items, desc="[Bước 3] Gemini Dịch thuật SRT", leave=False) as pbar:
             for b_idx, batch in enumerate(batches, 1):

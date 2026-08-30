@@ -19,7 +19,7 @@ import customtkinter as ctk
 import copy
 from typing import Callable, Dict, List, Optional, Tuple
 
-from config import BlurRegion, CookieConfig, PipelineConfig, SubtitleStyle, SUBTITLE_PRESETS, TTSConfig, VOICE_PRESETS
+from config import BlurRegion, CookieConfig, PipelineConfig, SubtitleStyle, SUBTITLE_PRESETS, TTSConfig, VOICE_PRESETS, TRANSLATION_TOPIC_PRESETS
 from pipeline import DouyinAutoPipeline
 from roi_selector import VisualROISelectorDialog
 
@@ -317,6 +317,24 @@ class DouyinEditorApp(ctk.CTk):
             fg_color="#0284c7", hover_color="#0369a1"
         )
         self.btn_check_key.pack(side="left")
+
+        # Translation Topic / Context Row
+        topic_row = ctk.CTkFrame(key_card, fg_color="transparent")
+        topic_row.pack(fill="x", padx=12, pady=(0, 6))
+        ctk.CTkLabel(topic_row, text="🎯 Chủ đề / Ngữ cảnh dịch:", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=(0, 8))
+
+        self.cmb_topic = ctk.CTkComboBox(
+            topic_row,
+            values=[
+                "🎮 Minecraft cho Trẻ Em (Vui nhộn, chuẩn gamer nhí)",
+                "🕹️ Game & Esports Tổng Hợp (Kịch tính, hài hước)",
+                "✨ Hài Hước / Giải Trí Đời Sống (Tự nhiên, dí dỏm)",
+                "🌐 Đa Dụng / Tiêu Chuẩn (Chuẩn mực, súc tích)"
+            ],
+            width=320
+        )
+        self.cmb_topic.set("🎮 Minecraft cho Trẻ Em (Vui nhộn, chuẩn gamer nhí)")
+        self.cmb_topic.pack(side="left")
 
         # Status Label
         self.lbl_api_status = ctk.CTkLabel(
@@ -1099,12 +1117,24 @@ class DouyinEditorApp(ctk.CTk):
         elif "HQ" in sep_speed_val or "75%" in sep_speed_val:
             sep_speed_code = "hq"
 
+        topic_val = self.cmb_topic.get() if hasattr(self, "cmb_topic") else "minecraft_kids"
+        topic_code = "minecraft_kids"
+        if "Minecraft" in topic_val:
+            topic_code = "minecraft_kids"
+        elif "Game" in topic_val:
+            topic_code = "gaming_general"
+        elif "Hài Hước" in topic_val:
+            topic_code = "comedy_entertainment"
+        else:
+            topic_code = "general"
+
         config = PipelineConfig(
             llm_provider=cur_provider,
             deepseek_api_key=api_key if cur_provider == "deepseek" else self.saved_deepseek_key,
             deepseek_model_name=self.cmb_ai_model.get().strip() if cur_provider == "deepseek" else self.saved_deepseek_model,
             gemini_api_key=api_key if cur_provider == "gemini" else self.saved_gemini_key,
             gemini_model_name=self.cmb_ai_model.get().strip() if cur_provider == "gemini" else self.saved_gemini_model,
+            topic_preset=topic_code,
             speed_factor=speed_factor,
             final_speed=final_speed,
             keep_bgm=keep_bgm,

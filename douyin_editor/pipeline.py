@@ -13,7 +13,7 @@ from rich.panel import Panel
 from rich.table import Table
 from tqdm import tqdm
 
-from config import BlurRegion, CookieConfig, PipelineConfig
+from config import BlurRegion, CookieConfig, PipelineConfig, TRANSLATION_TOPIC_PRESETS
 from downloader import DouyinDownloader
 from preprocessor import VideoPreprocessor
 from transcriber import WhisperTranscriber
@@ -66,6 +66,8 @@ class DouyinAutoPipeline:
         ai_provider_name = "DeepSeek AI" if getattr(self.config, "llm_provider", "deepseek") == "deepseek" else "Google Gemini"
         ai_model_name = getattr(self.config, "deepseek_model_name", "deepseek-v4-flash") if getattr(self.config, "llm_provider", "deepseek") == "deepseek" else self.config.gemini_model_name
         table.add_row("AI Dịch thuật", f"{ai_provider_name} ({ai_model_name})")
+        topic_info = TRANSLATION_TOPIC_PRESETS.get(getattr(self.config, "topic_preset", "minecraft_kids"), {}).get("name", "Minecraft cho Trẻ Em")
+        table.add_row("Chủ đề dịch thuật", topic_info)
         table.add_row("Giọng đọc tiếng Việt (TTS)", self.config.tts_config.voice)
         table.add_row("Font chữ Hardsub", f"{self.config.subtitle_style.font_name} (Size: {self.config.subtitle_style.font_size}px)")
         

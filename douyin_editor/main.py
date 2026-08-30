@@ -36,6 +36,7 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument("-u", "--url", type=str, help="Link video Douyin hoac chuoi chia se.")
     parser.add_argument("--provider", type=str, default="deepseek", choices=["deepseek", "gemini"], help="AI Provider dich thuat (deepseek hoac gemini).")
+    parser.add_argument("--topic", type=str, default="minecraft_kids", choices=["minecraft_kids", "gaming_general", "comedy_entertainment", "general"], help="Chu de dich thuat (mac dinh: minecraft_kids).")
     parser.add_argument("-k", "--deepseek-key", type=str, default=os.getenv("DEEPSEEK_API_KEY", "sk-7731fa779b8a46fda7e9e48c46bce715"), help="API Key DeepSeek.")
     parser.add_argument("-m", "--deepseek-model", type=str, default="deepseek-v4-flash", help="Model DeepSeek (mac dinh: deepseek-v4-flash).")
     parser.add_argument("--gemini-key", type=str, default=os.getenv("GEMINI_API_KEY", ""), help="API Key Google Gemini.")
@@ -151,6 +152,7 @@ def main():
         gemini_api_key=gemini_key,
         gemini_model_name=args.gemini_model,
         whisper_model_size=args.whisper_model,
+        topic_preset=args.topic,
         speed_factor=args.speed,
         final_speed=args.final_speed,
         keep_bgm=not args.no_bgm,

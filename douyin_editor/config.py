@@ -425,6 +425,91 @@ class TTSConfig:
     preset_name: str = "Cô Gái Hoạt Ngôn (CapCut Chính Chủ)"
 
 
+TRANSLATION_TOPIC_PRESETS = {
+    "minecraft_kids": {
+        "id": "minecraft_kids",
+        "name": "🎮 Minecraft cho Trẻ Em (Vui nhộn, chuẩn gamer nhí)",
+        "description": "Tối ưu ngữ cảnh Minecraft thiếu nhi, xưng hô 'mình/các bạn', từ vựng chuẩn gamer Việt, ngắn gọn, giàu cảm xúc.",
+        "prompt_context": (
+            "CHỦ ĐỀ & BỐI CẢNH ĐẶC BIỆT: Video về game MINECRAFT dành cho TRẺ EM / THIẾU NHI / GAME THỦ NHÍ xem.\n\n"
+            "1. PHONG CÁCH & VĂN PHONG DÀNH CHO TRẺ EM:\n"
+            "- Giọng điệu: Hào hứng, vui tươi, nhí nhảnh, hồi hộp, kịch tính, cuốn hút và dễ thương.\n"
+            "- Xưng hô thân mật, gần gũi: Dùng 'mình', 'tớ', 'tụi mình' và gọi người xem là 'các bạn ơi', 'mọi người ơi', 'các bạn'.\n"
+            "- TUYỆT ĐỐI KHÔNG dùng đại từ cứng nhắc/người lớn như 'tôi - bạn', 'chúng tôi', 'quý vị', 'ngươi - ta'.\n"
+            "- Câu từ trong sáng, giàu cảm xúc cảm thán ('Trời ơi!', 'Cứu mình với!', 'U là trời!', 'Xem này các bạn ơi!', 'Đỉnh chóp quá!', 'Chạy mau thôi!').\n\n"
+            "2. BỘ TỪ ĐIỂN THUẬT NGỮ MINECRAFT CHUẨN GAMER VIỆT (BẮT BUỘC SỬ DỤNG ĐÚNG):\n"
+            "  • Quái vật & Sinh vật:\n"
+            "    - 苦力怕 / 爬行者 -> Creeper (hoặc quái nổ)\n"
+            "    - 僵尸 / 丧尸 -> Zombie (xác sống)\n"
+            "    - 骷髅 / 骷髅弓箭手 -> Skeleton (bộ xương bắn cung)\n"
+            "    - 末影人 / 小黑 -> Enderman\n"
+            "    - 末影龙 -> Rồng Ender (Ender Dragon)\n"
+            "    - 村民 -> Dân làng / bác dân làng\n"
+            "    - 铁傀儡 -> Golem sắt (Người sắt bảo vệ)\n"
+            "    - 监守者 / 潜声守卫 -> Quái vật Warden (Quái bóng tối)\n"
+            "    - 凋灵 -> Quái Wither (Trùm Wither 3 đầu)\n"
+            "    - 猪灵 -> Piglin (Heo địa ngục)\n"
+            "    - 史莱姆 -> Slime (Cục thạch)\n"
+            "    - 烈焰人 -> Quái lửa Blaze\n"
+            "    - 恶魂 -> Ma địa ngục Ghast\n"
+            "    - 溺尸 -> Zombie đuối nước (Drowned)\n"
+            "    - 掠夺者 -> Kẻ cướp dân làng (Pillager)\n\n"
+            "  • Khối, Trang bị & Vật phẩm:\n"
+            "    - 钻石 / 钻石套 -> Kim cương / Bộ giáp kim cương\n"
+            "    - 下界合金 / 狱髓 -> Netherite / Giáp Netherite xịn nhất\n"
+            "    - 黑曜石 -> Đá Obsidian (Hắc diện thạch)\n"
+            "    - 基岩 -> Đá nền (Bedrock - không thể phá hủy)\n"
+            "    - 红石 -> Đá đỏ (Mạch đá đỏ)\n"
+            "    - 附魔金苹果 -> Táo vàng phù phép (Táo Enchant / Táo Notch)\n"
+            "    - 不死图腾 -> Bùa bất tử (Totem bất tử cứu mạng)\n"
+            "    - 鞘翅 -> Cánh cứng Elytra (Cánh lượn)\n"
+            "    - 镐子 / 斧头 / 剑 / 弓 -> Cúp đào đá / Rìu / Kiếm / Cung tên\n"
+            "    - 工作台 / 熔炉 / 箱子 -> Bàn chế tạo / Lò nung / Rương đồ\n"
+            "    - 潜影盒 -> Hộp Shulker (Hộp ma thuật)\n"
+            "    - 药水 / 隐身药水 -> Thuốc phù thủy / Thuốc tàng hình\n"
+            "    - TNT -> Thuốc nổ TNT\n\n"
+            "  • Hành động & Cơ chế chơi:\n"
+            "    - 挖矿 / 下矿 -> Đi đào mỏ / Đào khoáng sản\n"
+            "    - 合成 / 打造 -> Chế tạo đồ (Craft đồ)\n"
+            "    - 附魔 -> Phù phép (Ép ngọc tăng sức mạnh)\n"
+            "    - 极限生存 / 极限模式 -> Sinh tồn Hardcore (Chỉ có đúng 1 mạng duy nhất)\n"
+            "    - 生存模式 / 创造模式 -> Chế độ Sinh tồn / Sáng tạo\n"
+            "    - 落地水 -> Pha cứu mạng bằng xô nước (MLG Water drop clutch)\n"
+            "    - 跑酷 -> Nhảy Parkour điêu luyện\n"
+            "    - 陷阱 -> Bẫy / Cạm bẫy troll\n"
+            "    - 刷怪笼 / 刷怪塔 -> Lồng quái / Tháp farm đồ tự động\n"
+            "    - 模组 -> Bản Mod mở rộng\n\n"
+            "3. YÊU CẦU ĐỘ DÀI CÂU DỊCH:\n"
+            "- Câu dịch phải súc tích, ngắt câu nhịp nhàng, không quá dài dòng để giọng đọc AI CapCut TTS đọc kịp video và trẻ em đọc phụ đề dễ dàng."
+        )
+    },
+    "gaming_general": {
+        "id": "gaming_general",
+        "name": "🕹️ Game & Esports Tổng Hợp (Kịch tính, hài hước)",
+        "description": "Dành cho video game tổng hợp, liên quân, roblox, free fire, esports.",
+        "prompt_context": (
+            "CHỦ ĐỀ: Video Game / Trò chơi điện tử. Giọng điệu hào hứng, kịch tính, dùng thuật ngữ game quen thuộc (combat, gank, leo rank, gánh team, outplay, boss, farm đồ). Xưng hô 'mình/các bạn'."
+        )
+    },
+    "comedy_entertainment": {
+        "id": "comedy_entertainment",
+        "name": "✨ Hài Hước / Giải Trí Đời Sống (Tự nhiên, dí dỏm)",
+        "description": "Dành cho video hài Douyin, đời sống thường ngày, bắt trend.",
+        "prompt_context": (
+            "CHỦ ĐỀ: Giải trí, hài hước đời sống. Văn phong gần gũi, dí dỏm, bắt trend tự nhiên, mượt mà, thuần phong mỹ tục tiếng Việt."
+        )
+    },
+    "general": {
+        "id": "general",
+        "name": "🌐 Đa Dụng / Tiêu Chuẩn (Chuẩn mực, súc tích)",
+        "description": "Dịch thuật tổng quát, chuẩn xác và trung thực với nội dung gốc.",
+        "prompt_context": (
+            "CHỦ ĐỀ: Video đa dụng ngắn. Văn phong tự nhiên, súc tích, chuẩn tiếng Việt hiện đại."
+        )
+    }
+}
+
+
 @dataclass
 class CookieConfig:
     """
@@ -449,6 +534,10 @@ class PipelineConfig:
     gemini_model_name: str = "gemini-3.6-flash"
     whisper_model_size: str = "small"
     whisper_language: str = "zh"
+    
+    # Translation Context & Topic (Chủ đề dịch thuật)
+    topic_preset: str = "minecraft_kids" # Mặc định chủ đề Minecraft cho trẻ em
+    custom_translation_prompt: Optional[str] = None
     
     # Video Processing
     speed_factor: float = 0.70           # Tốc độ làm chậm để AI dịch & đọc tiếng Việt khớp timeline
