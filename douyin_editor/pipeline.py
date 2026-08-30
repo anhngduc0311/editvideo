@@ -66,7 +66,8 @@ class DouyinAutoPipeline:
         table.add_row("AI Dịch thuật", f"{ai_provider_name} ({ai_model_name})")
         table.add_row("Giọng đọc tiếng Việt (TTS)", self.config.tts_config.voice)
         table.add_row("Font chữ Hardsub", f"{self.config.subtitle_style.font_name} (Size: {self.config.subtitle_style.font_size}px)")
-        table.add_row("Tách giọng gốc / BGM", "Bật (Demucs/FFmpeg DSP)" if self.config.keep_bgm else "Tắt (Mute)")
+        vocal_info = f"Bật ({getattr(self.config, 'vocal_model_name', 'MDX-Net')} | {getattr(self.config, 'vocal_speed', 'turbo').upper()})" if self.config.keep_bgm else "Tắt (Mute)"
+        table.add_row("Tách giọng gốc / BGM", vocal_info)
 
         console.print(Panel(table, title="[bold yellow]🚀 DOUYIN AUTO VIDEO EDITING PIPELINE (OOP)[/bold yellow]", expand=False))
 
@@ -165,13 +166,14 @@ class DouyinAutoPipeline:
             overall_pbar.update(1)
 
             # ==========================================
-            # BƯỚC 4: XÓA GIỌNG NÓI GỐC & TÁCH BGM
+            # BƯỚC 4: XÓA GIỌNG NÓI GỐC & TÁCH BGM (AI MDX-NET ONNX)
             # ==========================================
-            notify(4, "Bước 4: Tách Vocal & BGM", "Đang tách giọng nói gốc và bảo tồn nhạc nền...")
-            console.print("[bold cyan]▶ BƯỚC 4: Xóa giọng nói gốc và tách nhạc nền (BGM)...[/bold cyan]")
+            notify(4, "Bước 4: Tách Vocal & BGM", "Đang bóc tách giọng nói gốc bằng AI MDX-Net và bảo tồn nhạc nền...")
+            console.print("[bold cyan]▶ BƯỚC 4: Bóc tách giọng nói gốc và giữ nhạc nền (AI MDX-Net Engine)...[/bold cyan]")
             bgm_track_path = self.separator.process(
                 audio_path=extracted_audio,
-                output_bgm_path=bgm_audio
+                output_bgm_path=bgm_audio,
+                progress_callback=lambda p, msg: notify(4, "Bước 4: Tách Vocal & BGM", msg)
             )
             overall_pbar.update(1)
 

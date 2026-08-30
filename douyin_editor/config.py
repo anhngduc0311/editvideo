@@ -456,12 +456,19 @@ class PipelineConfig:
     video_crf: int = 18
     video_preset: str = "medium"
     
-    # Audio Settings
-    keep_bgm: bool = False               # Mặc định TẮT âm thanh gốc để loại bỏ 100% tiếng Trung cũ
+    # Audio & Vocal Separation Settings (UVR MDX-Net Engine)
+    keep_bgm: bool = False               # Bật/Tắt tách và giữ nhạc nền BGM (bóc tách sạch tiếng Trung)
     bgm_volume: float = 0.25
     custom_bgm_path: Optional[str] = None # Đường dẫn file nhạc nền riêng (nếu có)
     tts_volume: float = 1.00
     audio_ducking: bool = True
+    vocal_separation_mode: str = "instrumental" # "instrumental" (lấy beat), "vocals" (lấy lời), "both"
+    vocal_model_name: str = "UVR-MDX-NET-Inst_HQ_3" # "UVR-MDX-NET-Inst_HQ_3", "UVR_MDXNET_KIM_Vocal_2", "UVR-MDX-NET-Voc_FT"
+    vocal_speed: str = "turbo"           # "turbo" (0%), "fast" (25%), "balanced" (50%), "hq" (75%)
+    vocal_overlap: float = 0.0           # Tỉ lệ overlap (0.0 = turbo 2.5x real-time)
+    vocal_batch_size: int = 1            # Kích thước batch chunk cho AI
+    vocal_threads: Optional[int] = None  # Số luồng CPU (None = tự động tối ưu)
+    models_dir: Path = field(default_factory=lambda: Path("models"))
     
     # Cookies & Downloader Settings
     cookie_config: CookieConfig = field(default_factory=CookieConfig)
@@ -481,3 +488,4 @@ class PipelineConfig:
         self.work_dir.mkdir(parents=True, exist_ok=True)
         self.download_dir.mkdir(parents=True, exist_ok=True)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.models_dir.mkdir(parents=True, exist_ok=True)

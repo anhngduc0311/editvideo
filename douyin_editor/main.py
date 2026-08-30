@@ -63,7 +63,11 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument("--font-size", type=int, default=22, help="Kich thuoc chu phu de.")
     parser.add_argument("--font-name", type=str, default="Arial", help="Ten font chu.")
+    parser.add_argument("--keep-bgm", action="store_true", help="Bat tach nhac nen BGM bang AI MDX-Net.")
     parser.add_argument("--no-bgm", action="store_true", help="Tat nhac nen (chi giu lai giong doc TTS).")
+    parser.add_argument("--vocal-model", type=str, default="UVR-MDX-NET-Inst_HQ_3", choices=["UVR-MDX-NET-Inst_HQ_3", "UVR_MDXNET_KIM_Vocal_2", "UVR-MDX-NET-Voc_FT"], help="Model AI tach am thanh.")
+    parser.add_argument("--vocal-speed", type=str, default="turbo", choices=["turbo", "fast", "balanced", "hq"], help="Toc do tach am AI.")
+    parser.add_argument("--vocal-overlap", type=float, default=None, choices=[0.0, 0.25, 0.5, 0.75], help="Tỉ lệ overlap gối đầu.")
     parser.add_argument("--custom-bgm", type=str, default=None, help="Duong dan file nhac nen rieng (MP3/WAV).")
     parser.add_argument("--bgm-volume", type=float, default=0.25, help="Am luong nhac nen (0.0-1.0).")
     parser.add_argument("--check-api", action="store_true", help="Kiem tra trang thai va Rate Limit cua AI API Key.")
@@ -144,6 +148,20 @@ def main():
     sub_style.font_name = args.font_name
     sub_style.font_size = args.font_size
 
+    # Overlap & Speed calculation
+    if args.vocal_overlap is not None:
+        v_overlap = args.vocal_overlap
+    elif args.vocal_speed == "fast":
+        v_overlap = 0.25
+    elif args.vocal_speed == "balanced":
+        v_overlap = 0.50
+    elif args.vocal_speed == "hq":
+        v_overlap = 0.75
+    else:
+        v_overlap = 0.0
+
+    keep_bgm_val = args.keep_bgm or (not args.no_bgm and args.custom_bgm is None)
+
     config = PipelineConfig(
         llm_provider=provider,
         deepseek_api_key=deepseek_key,
@@ -153,9 +171,12 @@ def main():
         whisper_model_size=args.whisper_model,
         speed_factor=args.speed,
         final_speed=args.final_speed,
-        keep_bgm=not args.no_bgm,
+        keep_bgm=keep_bgm_val if not args.no_bgm else False,
         bgm_volume=args.bgm_volume,
         custom_bgm_path=args.custom_bgm,
+        vocal_model_name=args.vocal_model,
+        vocal_speed=args.vocal_speed,
+        vocal_overlap=v_overlap,
         cookie_config=cookie_cfg,
         blur_region=BlurRegion(
             y_ratio=args.blur_y_ratio,

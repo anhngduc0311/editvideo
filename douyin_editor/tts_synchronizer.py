@@ -334,6 +334,12 @@ class VietnameseTTSSynchronizer:
                         seg = audio_cache[map_key]
                         phrase_audios.append((phrase, seg))
                         total_group_audio_ms += len(seg)
+                    else:
+                        # Fallback nếu câu nào bị lỗi mạng: tạo segment âm thanh tạm để không bao giờ mất phụ đề
+                        est_dur_ms = max(1000, int(len(phrase.split()) * 260))
+                        seg = AudioSegment.silent(duration=est_dur_ms)
+                        phrase_audios.append((phrase, seg))
+                        total_group_audio_ms += len(seg)
 
                 if not phrase_audios:
                     pbar.update(1)
@@ -346,7 +352,7 @@ class VietnameseTTSSynchronizer:
                 # Nếu audio dài hơn khoảng cho phép, tăng tốc nhẹ để vừa vặn slot
                 speed_ratio = 1.0
                 if total_group_audio_ms > slot_duration_ms > 0:
-                    speed_ratio = min(total_group_audio_ms / slot_duration_ms, 1.30)
+                    speed_ratio = min(total_group_audio_ms / slot_duration_ms, 1.35)
 
                 # Chuẩn bị audio segments với speed_ratio đã điều chỉnh
                 processed_phrase_audios = []
@@ -367,6 +373,7 @@ class VietnameseTTSSynchronizer:
                 for p_idx, (phrase_text, phrase_seg) in enumerate(processed_phrase_audios):
                     p_dur_ms = len(phrase_seg)
                     p_start_sec = cur_start_ms / 1000.0
+                    min_display_sec = max(p_dur_ms / 1000.0, 0.8)
 
                     # Đặt audio vào master track
                     master_track = master_track.overlay(phrase_seg, position=cur_start_ms)
@@ -374,20 +381,23 @@ class VietnameseTTSSynchronizer:
                     # Tính toán thời gian hiển thị của cụm từ phụ đề:
                     if p_idx < num_phrases - 1:
                         # Cụm từ chưa phải cuối cùng: hiển thị liên tục cho đến khi cụm từ tiếp theo bắt đầu
-                        next_phrase_start_ms = cur_start_ms + p_dur_ms + 80
-                        p_end_sec = next_phrase_start_ms / 1000.0
+                        next_phrase_start_ms = cur_start_ms + p_dur_ms + 60
+                        p_end_sec = max(p_start_sec + min_display_sec, next_phrase_start_ms / 1000.0)
                     else:
                         # Cụm từ cuối cùng của câu: hiển thị duy trì cho tới hết câu thoại gốc (orig_item.end_seconds)
                         # để người xem đọc kịp và che hoàn toàn phụ đề tiếng Trung gốc của câu này
                         natural_end_sec = (cur_start_ms + p_dur_ms) / 1000.0
                         p_end_sec = max(natural_end_sec, orig_item.end_seconds)
 
-                        # Nếu câu kế tiếp bắt đầu sớm hơn, giới hạn lại để không bị đè lên câu sau
+                        # Nếu câu kế tiếp bắt đầu sau ít nhất 0.8s, giới hạn lại để không đè lên câu sau
                         if next_orig_start_sec is not None and next_orig_start_sec > p_start_sec:
-                            p_end_sec = min(p_end_sec, next_orig_start_sec)
+                            if next_orig_start_sec - p_start_sec >= 0.8:
+                                p_end_sec = min(p_end_sec, next_orig_start_sec)
+                            else:
+                                p_end_sec = p_start_sec + min_display_sec
 
                         if p_end_sec <= p_start_sec:
-                            p_end_sec = natural_end_sec
+                            p_end_sec = p_start_sec + min_display_sec
 
                     synced_subtitles.append(
                         SubtitleItem(
@@ -400,7 +410,7 @@ class VietnameseTTSSynchronizer:
                         )
                     )
                     global_sub_idx += 1
-                    cur_start_ms += p_dur_ms + 80  # Nghỉ 80ms giữa các cụm từ
+                    cur_start_ms += p_dur_ms + 60  # Nghỉ 60ms giữa các cụm từ
 
                 pbar.update(1)
 

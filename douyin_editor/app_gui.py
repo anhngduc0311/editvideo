@@ -75,6 +75,9 @@ class DouyinEditorApp(ctk.CTk):
         self.saved_deepseek_model = "deepseek-v4-flash"
         self.saved_gemini_key = os.getenv("GEMINI_API_KEY", "")
         self.saved_gemini_model = "gemini-3.6-flash"
+        self.saved_keep_bgm = False
+        self.saved_vocal_model = "MDX-Net Inst HQ 3 (Chuẩn - Khuyên dùng cho Nhạc Nền)"
+        self.saved_vocal_speed = "⚡ Siêu Tốc (Turbo 0% Overlap - ~2.5x real-time)"
         if CONFIG_FILE.exists():
             try:
                 data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
@@ -86,6 +89,9 @@ class DouyinEditorApp(ctk.CTk):
                 self.saved_cookie_str = data.get("douyin_cookie_str", "")
                 self.saved_cookie_file = data.get("douyin_cookie_file", "")
                 self.saved_browser_name = data.get("douyin_browser_name", "Edge")
+                self.saved_keep_bgm = data.get("keep_bgm", False)
+                self.saved_vocal_model = data.get("vocal_model", self.saved_vocal_model)
+                self.saved_vocal_speed = data.get("vocal_speed", self.saved_vocal_speed)
             except Exception:
                 pass
 
@@ -109,6 +115,9 @@ class DouyinEditorApp(ctk.CTk):
                 "douyin_cookie_str": self.cookie_textbox.get("1.0", "end").strip() if hasattr(self, "cookie_textbox") else "",
                 "douyin_cookie_file": getattr(self, "selected_cookie_file_path", ""),
                 "douyin_browser_name": self.cmb_browser.get() if hasattr(self, "cmb_browser") else "Edge",
+                "keep_bgm": bool(self.chk_bgm.get()) if hasattr(self, "chk_bgm") else False,
+                "vocal_model": self.cmb_vocal_model.get() if hasattr(self, "cmb_vocal_model") else self.saved_vocal_model,
+                "vocal_speed": self.cmb_vocal_speed.get() if hasattr(self, "cmb_vocal_speed") else self.saved_vocal_speed,
             }
             CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
@@ -415,11 +424,11 @@ class DouyinEditorApp(ctk.CTk):
         self.slider_blur_h.set(0.24)
         self.slider_blur_h.grid(row=1, column=1, sticky="ew", padx=(6, 0))
 
-        # 5. Card TTS & BGM
+        # 5. Card TTS & BGM (AI MDX-Net Engine)
         audio_card = ctk.CTkFrame(left_scroll, corner_radius=8)
         audio_card.pack(fill="x", padx=5, pady=5)
 
-        ctk.CTkLabel(audio_card, text="🎙️ Giọng Đọc AI (TTS) & Nhạc Nền (BGM):", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=12, pady=(10, 6))
+        ctk.CTkLabel(audio_card, text="🎙️ Giọng Đọc AI (CapCut TTS) & Tách Nhạc Nền (MDX-Net):", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=12, pady=(10, 6))
 
         tts_row = ctk.CTkFrame(audio_card, fg_color="transparent")
         tts_row.pack(fill="x", padx=12, pady=4)
@@ -453,45 +462,100 @@ class DouyinEditorApp(ctk.CTk):
         )
         self.btn_preview_voice.pack(side="left")
 
+        # Checkbox Bật/Tắt tách nhạc nền AI MDX-Net
+        self.chk_bgm = ctk.CTkCheckBox(
+            audio_card,
+            text="🎵 Tách Nhạc Nền Gốc Bằng AI MDX-Net Turbo (Xóa tiếng Trung, giữ beat & SFX)",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            command=self._on_bgm_toggled
+        )
+        if getattr(self, "saved_keep_bgm", False):
+            self.chk_bgm.select()
+        else:
+            self.chk_bgm.deselect()
+        self.chk_bgm.pack(anchor="w", padx=12, pady=(8, 4))
+
+        # Khung tùy chọn chi tiết cho MDX-Net AI
+        self.frame_mdx_options = ctk.CTkFrame(audio_card, fg_color="#18181b", corner_radius=6)
+        self.frame_mdx_options.pack(fill="x", padx=12, pady=(2, 6))
+
+        mdx_row1 = ctk.CTkFrame(self.frame_mdx_options, fg_color="transparent")
+        mdx_row1.pack(fill="x", padx=8, pady=(6, 3))
+        ctk.CTkLabel(mdx_row1, text="Mô hình AI:", font=ctk.CTkFont(size=11, weight="bold")).pack(side="left", padx=(0, 6))
+
+        vocal_model_options = [
+            "MDX-Net Inst HQ 3 (Chuẩn - Khuyên dùng cho Nhạc Nền)",
+            "MDX-Net Kim Vocal 2 (Tối ưu lọc sạch Giọng Nói)",
+            "MDX-Net Voc FT (Tinh chỉnh Giọng Hát)"
+        ]
+        self.cmb_vocal_model = ctk.CTkComboBox(
+            mdx_row1,
+            values=vocal_model_options,
+            width=330,
+            font=ctk.CTkFont(size=11)
+        )
+        self.cmb_vocal_model.set(getattr(self, "saved_vocal_model", vocal_model_options[0]))
+        self.cmb_vocal_model.pack(side="left", fill="x", expand=True)
+
+        mdx_row2 = ctk.CTkFrame(self.frame_mdx_options, fg_color="transparent")
+        mdx_row2.pack(fill="x", padx=8, pady=(3, 6))
+        ctk.CTkLabel(mdx_row2, text="Tốc độ tách:", font=ctk.CTkFont(size=11, weight="bold")).pack(side="left", padx=(0, 6))
+
+        vocal_speed_options = [
+            "⚡ Siêu Tốc (Turbo 0% Overlap - ~2.5x real-time)",
+            "🚀 Rất Nhanh (Fast 25% Overlap)",
+            "⚖️ Cân Bằng (Balanced 50% Overlap)",
+            "💎 Chất Lượng Cao (HQ 75% Overlap)"
+        ]
+        self.cmb_vocal_speed = ctk.CTkComboBox(
+            mdx_row2,
+            values=vocal_speed_options,
+            width=330,
+            font=ctk.CTkFont(size=11)
+        )
+        self.cmb_vocal_speed.set(getattr(self, "saved_vocal_speed", vocal_speed_options[0]))
+        self.cmb_vocal_speed.pack(side="left", fill="x", expand=True)
+
         # Hàng chọn file nhạc nền riêng (Tùy chọn)
         custom_bgm_row = ctk.CTkFrame(audio_card, fg_color="transparent")
-        custom_bgm_row.pack(fill="x", padx=12, pady=(6, 4))
+        custom_bgm_row.pack(fill="x", padx=12, pady=(4, 4))
 
         self.custom_bgm_path_var = tk.StringVar(value="")
         self.lbl_custom_bgm = ctk.CTkLabel(
             custom_bgm_row,
-            text="🎵 Nhạc nền: (Mặc định Mute - Sạch 100% tiếng Trung)",
+            text="🎵 Hoặc dùng MP3 ngoài:",
             font=ctk.CTkFont(size=11),
             text_color="#10b981"
         )
-        self.lbl_custom_bgm.pack(side="left", fill="x", expand=True)
+        self.lbl_custom_bgm.pack(side="left", padx=(0, 4))
 
         self.btn_choose_bgm = ctk.CTkButton(
             custom_bgm_row,
-            text="🎵 Chọn MP3 riêng...",
+            text="📁 Chọn file MP3...",
             font=ctk.CTkFont(size=11, weight="bold"),
-            width=135,
-            height=28,
+            width=120,
+            height=26,
             fg_color="#3b82f6",
             hover_color="#2563eb",
             command=self._choose_custom_bgm
         )
-        self.btn_choose_bgm.pack(side="right", padx=(4, 0))
+        self.btn_choose_bgm.pack(side="left", padx=(4, 4))
 
         self.btn_clear_bgm = ctk.CTkButton(
             custom_bgm_row,
-            text="✖",
-            font=ctk.CTkFont(size=11, weight="bold"),
-            width=28,
-            height=28,
+            text="✖ Bỏ",
+            font=ctk.CTkFont(size=11),
+            width=50,
+            height=26,
             fg_color="#ef4444",
             hover_color="#dc2626",
             command=self._clear_custom_bgm
         )
+        # Chỉ hiện khi đã chọn file
 
         bgm_vol_row = ctk.CTkFrame(audio_card, fg_color="transparent")
         bgm_vol_row.pack(fill="x", padx=12, pady=(2, 4))
-        ctk.CTkLabel(bgm_vol_row, text="Âm lượng nhạc nền (nếu chọn):").pack(side="left")
+        ctk.CTkLabel(bgm_vol_row, text="Âm lượng nhạc nền BGM:").pack(side="left")
         self.lbl_bgm_vol = ctk.CTkLabel(bgm_vol_row, text="25%", text_color="#38bdf8")
         self.lbl_bgm_vol.pack(side="right")
 
@@ -501,6 +565,9 @@ class DouyinEditorApp(ctk.CTk):
         )
         self.slider_bgm_vol.set(0.25)
         self.slider_bgm_vol.pack(fill="x", padx=12, pady=(0, 10))
+
+        # Cập nhật hiển thị ban đầu của frame MDX options
+        self._on_bgm_toggled()
 
         # 6. Card Phụ đề tiếng Việt (CapCut Subtitle Style Grid)
         sub_card = ctk.CTkFrame(left_scroll, corner_radius=8)
@@ -823,6 +890,18 @@ class DouyinEditorApp(ctk.CTk):
 
         threading.Thread(target=_work, daemon=True).start()
 
+    def _on_bgm_toggled(self):
+        """Ẩn/hiện hoặc làm nổi bật các tùy chọn AI MDX-Net khi bật/tắt tách nhạc nền"""
+        if not hasattr(self, "chk_bgm") or not hasattr(self, "frame_mdx_options"):
+            return
+        is_checked = bool(self.chk_bgm.get())
+        if is_checked:
+            self.frame_mdx_options.configure(fg_color="#18181b", border_width=1, border_color="#06b6d4")
+            self.lbl_custom_bgm.configure(text="🎵 Hoặc dùng MP3 ngoài (nếu có):", text_color="#10b981")
+        else:
+            self.frame_mdx_options.configure(fg_color="#111827", border_width=0)
+            self.lbl_custom_bgm.configure(text="🎵 Hoặc dùng MP3 ngoài (Mặc định Mute âm thanh gốc):", text_color="gray70")
+
     def _choose_custom_bgm(self):
         from tkinter import filedialog
         file_path = filedialog.askopenfilename(
@@ -1107,6 +1186,29 @@ class DouyinEditorApp(ctk.CTk):
         blur_enabled = bool(self.chk_blur.get())
         is_interactive_roi = bool(self.chk_interactive_roi.get())
 
+        # Phân tích mô hình và tốc độ tách AI MDX-Net
+        vocal_model_raw = self.cmb_vocal_model.get() if hasattr(self, "cmb_vocal_model") else ""
+        if "Kim" in vocal_model_raw:
+            vocal_model_key = "UVR_MDXNET_KIM_Vocal_2"
+        elif "Voc FT" in vocal_model_raw:
+            vocal_model_key = "UVR-MDX-NET-Voc_FT"
+        else:
+            vocal_model_key = "UVR-MDX-NET-Inst_HQ_3"
+
+        vocal_speed_raw = self.cmb_vocal_speed.get() if hasattr(self, "cmb_vocal_speed") else ""
+        if "25%" in vocal_speed_raw or "Fast" in vocal_speed_raw:
+            vocal_speed_code = "fast"
+            vocal_overlap_val = 0.25
+        elif "50%" in vocal_speed_raw or "Cân Bằng" in vocal_speed_raw:
+            vocal_speed_code = "balanced"
+            vocal_overlap_val = 0.50
+        elif "75%" in vocal_speed_raw or "Chất Lượng" in vocal_speed_raw:
+            vocal_speed_code = "hq"
+            vocal_overlap_val = 0.75
+        else:
+            vocal_speed_code = "turbo"
+            vocal_overlap_val = 0.0
+
         self.current_blur_region.enabled = blur_enabled
 
         # Xây dựng SubtitleStyle hoàn chỉnh từ mẫu đang chọn và font/size/margin
@@ -1129,6 +1231,9 @@ class DouyinEditorApp(ctk.CTk):
             keep_bgm=keep_bgm,
             bgm_volume=bgm_vol,
             custom_bgm_path=self.custom_bgm_path_var.get().strip() or None if hasattr(self, "custom_bgm_path_var") else None,
+            vocal_model_name=vocal_model_key,
+            vocal_speed=vocal_speed_code,
+            vocal_overlap=vocal_overlap_val,
             cookie_config=cookie_cfg,
             blur_region=self.current_blur_region,
             subtitle_style=sub_style,
