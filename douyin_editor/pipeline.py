@@ -98,8 +98,12 @@ class DouyinAutoPipeline:
             # BƯỚC 1: TẢI VIDEO TỪ DOUYIN
             # ==========================================
             notify(1, "Bước 1: Tải video Douyin", "Đang phân tích link và tải video chất lượng cao...")
-            console.print("\n[bold cyan]▶ BƯỚC 1: Đang tải video từ Douyin (yt-dlp)...[/bold cyan]")
-            raw_video = self.downloader.download(douyin_url_or_text, custom_filename=custom_name)
+            console.print("\n[bold cyan]▶ BƯỚC 1: Đang tải video từ Douyin (Multi-Engine Auto-Fallback)...[/bold cyan]")
+            raw_video = self.downloader.download(
+                douyin_url_or_text,
+                custom_filename=custom_name,
+                progress_callback=lambda p, msg: notify(1, "Bước 1: Tải video Douyin", msg)
+            )
             video_id = raw_video.stem
             overall_pbar.update(1)
 
