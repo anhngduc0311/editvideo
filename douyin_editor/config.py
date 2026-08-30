@@ -42,7 +42,7 @@ class SubtitleStyle:
     preset_id: str = "capcut_default"
     name: str = "Trắng viền đen (CapCut)"
     font_name: str = "Arial"
-    font_size: int = 22
+    font_size: int = 18
     primary_color: str = "&H00FFFFFF"    # Chữ trắng (ABGR)
     outline_color: str = "&H00000000"    # Viền đen
     back_color: str = "&H80000000"       # Nền bóng mờ (50% opacity)

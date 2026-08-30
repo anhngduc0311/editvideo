@@ -75,6 +75,8 @@ class DouyinEditorApp(ctk.CTk):
         self.saved_deepseek_model = "deepseek-v4-flash"
         self.saved_gemini_key = os.getenv("GEMINI_API_KEY", "")
         self.saved_gemini_model = "gemini-3.6-flash"
+        self.saved_font_size = "18"
+        self.saved_sub_preset = "capcut_default"
         if CONFIG_FILE.exists():
             try:
                 data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
@@ -86,6 +88,8 @@ class DouyinEditorApp(ctk.CTk):
                 self.saved_cookie_str = data.get("douyin_cookie_str", "")
                 self.saved_cookie_file = data.get("douyin_cookie_file", "")
                 self.saved_browser_name = data.get("douyin_browser_name", "Edge")
+                self.saved_font_size = data.get("subtitle_font_size", "18")
+                self.saved_sub_preset = data.get("subtitle_preset_id", "capcut_default")
             except Exception:
                 pass
 
@@ -109,6 +113,8 @@ class DouyinEditorApp(ctk.CTk):
                 "douyin_cookie_str": self.cookie_textbox.get("1.0", "end").strip() if hasattr(self, "cookie_textbox") else "",
                 "douyin_cookie_file": getattr(self, "selected_cookie_file_path", ""),
                 "douyin_browser_name": self.cmb_browser.get() if hasattr(self, "cmb_browser") else "Edge",
+                "subtitle_font_size": self.cmb_font_size.get() if hasattr(self, "cmb_font_size") else "18",
+                "subtitle_preset_id": getattr(self, "selected_sub_preset_id", "capcut_default"),
             }
             CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
@@ -572,10 +578,10 @@ class DouyinEditorApp(ctk.CTk):
         ctk.CTkLabel(sub_row, text="Cỡ chữ (Size):").grid(row=0, column=1, sticky="w")
         self.cmb_font_size = ctk.CTkComboBox(
             sub_row,
-            values=["18", "20", "22", "24", "26", "28", "32", "36"],
+            values=["14", "16", "18", "20", "22", "24", "26", "28", "32", "36"],
             command=lambda _: self._update_sub_preview_banner()
         )
-        self.cmb_font_size.set("22")
+        self.cmb_font_size.set(getattr(self, "saved_font_size", "18"))
         self.cmb_font_size.grid(row=1, column=1, sticky="ew", padx=(6, 0))
 
         # Vị trí mép dưới (Margin V) & In đậm
