@@ -77,49 +77,67 @@ class VocalSeparator:
 
     def separate_with_ffmpeg_fallback(self, audio_path: Path, output_bgm_path: Path) -> Path:
         """
-        Thuật toán dự phòng bằng FFmpeg: Triệt tiêu giọng nói ở dải âm trung/giữa (Mid/Side vocal removal)
+        Thuật toán FFmpeg DSP: Triệt tiêu giọng nói ở kênh giữa (Center-Channel Vocal Cancellation)
+        và lọc tần số để giữ lại nhạc nền (BGM) và hiệu ứng âm thanh (SFX) của video gốc.
         """
-        logger.info("[Bước 5 Fallback] Tách giọng bằng bộ lọc âm thanh FFmpeg Vocal Cut...")
-        # Sử dụng filter pan và equalizer để triệt tiêu tần số giọng người ở giữa
+        logger.info("[Bước 4 Fallback] Tách nhạc nền bằng bộ lọc âm thanh FFmpeg Vocal Cut...")
         filter_str = (
-            "pan=stereo|c0=c0-c1|c1=c1-c0,"
-            "highpass=f=120,lowpass=f=12000"
+            "stereotools=mlev=0.15:slev=1.35,"
+            "highpass=f=80,lowpass=f=15000,"
+            "volume=1.2"
         )
         cmd = [
             "ffmpeg", "-y",
             "-i", str(audio_path),
             "-af", filter_str,
             "-ar", "44100",
+            "-ac", "2",
             str(output_bgm_path)
         ]
         res = subprocess.run(cmd, capture_output=True, text=True)
         if res.returncode != 0:
-            logger.warning(f"Lỗi khi lọc BGM bằng FFmpeg: {res.stderr}. Tạo bản copy audio...")
-            shutil.copyfile(audio_path, output_bgm_path)
+            logger.warning(f"Lỗi khi lọc BGM bằng FFmpeg ({res.stderr[:200]}). Dùng bộ lọc pan stereo...")
+            cmd2 = [
+                "ffmpeg", "-y",
+                "-i", str(audio_path),
+                "-af", "pan=stereo|c0=c0-0.8*c1|c1=c1-0.8*c0,volume=1.2",
+                "-ar", "44100",
+                "-ac", "2",
+                str(output_bgm_path)
+            ]
+            subprocess.run(cmd2, capture_output=True, text=True)
         return output_bgm_path
 
     def process(self, audio_path: Path, output_bgm_path: Path) -> Optional[Path]:
         """
-        Tách âm thanh gốc. Nếu `keep_bgm=False` hoặc chưa có Demucs AI, trả về None (Mute hoàn toàn tiếng Trung cũ).
+        Tách âm thanh gốc và xử lý BGM.
+        - Nếu có file nhạc nền riêng (custom_bgm_path): Sử dụng trực tiếp file nhạc sạch (100% không tiếng Trung).
+        - Nếu keep_bgm=True và có Demucs AI: Sử dụng Deep Learning để bóc tách vocal.
+        - Nếu không có Demucs AI: Mute hoàn toàn âm thanh gốc để triệt tiêu 100% giọng nói tiếng Trung cũ.
         """
+        custom_bgm = getattr(self.config, "custom_bgm_path", None)
+        if custom_bgm and Path(custom_bgm).exists():
+            logger.info(f"[Bước 4] Sử dụng file nhạc nền BGM tùy chỉnh (sạch 100%): {custom_bgm}")
+            return Path(custom_bgm).resolve()
+
         if not self.config.keep_bgm:
-            logger.info("[Bước 5] Cấu hình tắt BGM gốc -> Mute hoàn toàn giọng tiếng Trung cũ.")
+            logger.info("[Bước 4] Đã tắt âm thanh gốc -> Mute hoàn toàn để giọng đọc Tiếng Việt trong trẻo 100%.")
             return None
 
         audio_path = Path(audio_path).resolve()
         output_bgm_path = Path(output_bgm_path).resolve()
         output_bgm_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with tqdm(total=100, desc="[Bước 5] Xóa giọng nói gốc & Tách BGM", leave=False) as pbar:
+        with tqdm(total=100, desc="[Bước 4] Tách giọng nói & Giữ BGM", leave=False) as pbar:
             if self._is_demucs_available():
                 try:
                     self.separate_with_demucs(audio_path, output_bgm_path)
                     pbar.update(100)
                     return output_bgm_path
                 except Exception as e:
-                    logger.warning(f"Demucs gặp lỗi ({e}). Để tránh lẫn tiếng Trung, hệ thống sẽ tắt âm thanh cũ.")
+                    logger.warning(f"Demucs AI gặp lỗi ({e}). Để tránh lẫn tiếng Trung, hệ thống sẽ tắt âm thanh gốc.")
                     return None
             else:
-                logger.info("[Bước 5] Chưa cài đặt Demucs AI -> Mute hoàn toàn giọng tiếng Trung cũ để giọng đọc Tiếng Việt trong trẻo 100%.")
+                logger.info("[Bước 4] Chưa cài đặt Demucs AI -> Mute hoàn toàn âm thanh gốc để loại bỏ 100% tiếng Trung cũ. (Bạn có thể chọn file MP3 riêng để lồng nhạc nền).")
                 pbar.update(100)
                 return None

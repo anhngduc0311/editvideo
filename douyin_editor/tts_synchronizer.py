@@ -348,20 +348,47 @@ class VietnameseTTSSynchronizer:
                 if total_group_audio_ms > slot_duration_ms > 0:
                     speed_ratio = min(total_group_audio_ms / slot_duration_ms, 1.30)
 
-                # Đặt từng cụm từ vào master track và tạo SubtitleItem tương ứng
-                cur_start_ms = start_ms
+                # Chuẩn bị audio segments với speed_ratio đã điều chỉnh
+                processed_phrase_audios = []
                 for phrase_text, phrase_seg in phrase_audios:
                     if speed_ratio > 1.02:
                         phrase_seg = self._speed_change(phrase_seg, speed_ratio)
+                    processed_phrase_audios.append((phrase_text, phrase_seg))
 
+                # Xác định mốc thời gian bắt đầu của câu kế tiếp (nếu có) để tránh đè phụ đề
+                next_orig_start_sec = None
+                if group_idx + 1 < len(phrase_tasks):
+                    next_orig_start_sec = phrase_tasks[group_idx + 1]["orig_item"].start_seconds
+
+                # Đặt từng cụm từ vào master track và tạo SubtitleItem tương ứng
+                cur_start_ms = start_ms
+                num_phrases = len(processed_phrase_audios)
+
+                for p_idx, (phrase_text, phrase_seg) in enumerate(processed_phrase_audios):
                     p_dur_ms = len(phrase_seg)
                     p_start_sec = cur_start_ms / 1000.0
-                    p_end_sec = (cur_start_ms + p_dur_ms) / 1000.0
 
                     # Đặt audio vào master track
                     master_track = master_track.overlay(phrase_seg, position=cur_start_ms)
 
-                    # Tạo phụ đề hiển thị chỉ trong đúng khoảng thời gian đọc câu này
+                    # Tính toán thời gian hiển thị của cụm từ phụ đề:
+                    if p_idx < num_phrases - 1:
+                        # Cụm từ chưa phải cuối cùng: hiển thị liên tục cho đến khi cụm từ tiếp theo bắt đầu
+                        next_phrase_start_ms = cur_start_ms + p_dur_ms + 80
+                        p_end_sec = next_phrase_start_ms / 1000.0
+                    else:
+                        # Cụm từ cuối cùng của câu: hiển thị duy trì cho tới hết câu thoại gốc (orig_item.end_seconds)
+                        # để người xem đọc kịp và che hoàn toàn phụ đề tiếng Trung gốc của câu này
+                        natural_end_sec = (cur_start_ms + p_dur_ms) / 1000.0
+                        p_end_sec = max(natural_end_sec, orig_item.end_seconds)
+
+                        # Nếu câu kế tiếp bắt đầu sớm hơn, giới hạn lại để không bị đè lên câu sau
+                        if next_orig_start_sec is not None and next_orig_start_sec > p_start_sec:
+                            p_end_sec = min(p_end_sec, next_orig_start_sec)
+
+                        if p_end_sec <= p_start_sec:
+                            p_end_sec = natural_end_sec
+
                     synced_subtitles.append(
                         SubtitleItem(
                             index=global_sub_idx,

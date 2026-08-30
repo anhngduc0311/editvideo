@@ -64,9 +64,11 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--font-size", type=int, default=22, help="Kich thuoc chu phu de.")
     parser.add_argument("--font-name", type=str, default="Arial", help="Ten font chu.")
     parser.add_argument("--no-bgm", action="store_true", help="Tat nhac nen (chi giu lai giong doc TTS).")
+    parser.add_argument("--custom-bgm", type=str, default=None, help="Duong dan file nhac nen rieng (MP3/WAV).")
+    parser.add_argument("--bgm-volume", type=float, default=0.25, help="Am luong nhac nen (0.0-1.0).")
     parser.add_argument("--check-api", action="store_true", help="Kiem tra trang thai va Rate Limit cua AI API Key.")
-    parser.add_argument("--blur-y-ratio", type=float, default=0.72, help="Toa do Y bat dau lam mo (ty le 0.0-1.0).")
-    parser.add_argument("--blur-height-ratio", type=float, default=0.18, help="Chieu cao vung lam mo (ty le 0.0-1.0).")
+    parser.add_argument("--blur-y-ratio", type=float, default=0.70, help="Toa do Y bat dau lam mo (ty le 0.0-1.0).")
+    parser.add_argument("--blur-height-ratio", type=float, default=0.25, help="Chieu cao vung lam mo (ty le 0.0-1.0).")
     return parser.parse_args()
 
 
@@ -152,11 +154,13 @@ def main():
         speed_factor=args.speed,
         final_speed=args.final_speed,
         keep_bgm=not args.no_bgm,
+        bgm_volume=args.bgm_volume,
+        custom_bgm_path=args.custom_bgm,
         cookie_config=cookie_cfg,
         blur_region=BlurRegion(
             y_ratio=args.blur_y_ratio,
             height_ratio=args.blur_height_ratio,
-            blur_power=15,
+            blur_power=20,
             enabled=True
         ),
         subtitle_style=sub_style,

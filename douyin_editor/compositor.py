@@ -68,6 +68,45 @@ class VideoCompositor:
         output_srt.write_text(scaled_content, encoding="utf-8")
         return output_srt
 
+    @staticmethod
+    def parse_srt_intervals(srt_path: Path, merge_gap: float = 0.35, pad_sec: float = 0.10) -> list[tuple[float, float]]:
+        """
+        Trích xuất danh sách các khoảng thời gian (start, end) có phụ đề hiển thị từ file SRT.
+        Tự động mở rộng nhẹ (pad_sec) và gộp các khoảng gần nhau (gap <= merge_gap giây)
+        để che phủ trọn vẹn 100% phụ đề gốc, không để lọt bất kỳ khung hình tiếng Trung nào.
+        """
+        if not srt_path.exists():
+            return []
+        try:
+            content = srt_path.read_text(encoding="utf-8")
+        except Exception:
+            return []
+        if not content.strip():
+            return []
+
+        pattern = r"(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})"
+        raw_intervals = []
+        for m in re.finditer(pattern, content):
+            h1, m1, s1, ms1, h2, m2, s2, ms2 = map(int, m.groups())
+            t1 = max(0.0, h1 * 3600 + m1 * 60 + s1 + ms1 / 1000.0 - pad_sec)
+            t2 = h2 * 3600 + m2 * 60 + s2 + ms2 / 1000.0 + pad_sec
+            if t2 > t1:
+                raw_intervals.append((t1, t2))
+
+        if not raw_intervals:
+            return []
+
+        # Sắp xếp và gộp các khoảng thời gian gần nhau
+        raw_intervals.sort(key=lambda x: x[0])
+        merged = [raw_intervals[0]]
+        for cur_start, cur_end in raw_intervals[1:]:
+            prev_start, prev_end = merged[-1]
+            if cur_start <= prev_end + merge_gap:
+                merged[-1] = (prev_start, max(prev_end, cur_end))
+            else:
+                merged.append((cur_start, cur_end))
+        return merged
+
     def build_force_style_string(self) -> str:
         s = self.config.subtitle_style
         style_parts = [
@@ -114,7 +153,7 @@ class VideoCompositor:
         Quy trình Render 1-Pass Đỉnh Cao:
         Gộp tất cả các tác vụ vào 1 lần render duy nhất:
         - Làm chậm video 0.70x (setpts) và tăng tốc xuất bản 1.2x ở Bước 8
-        - Làm mờ phụ đề cũ (crop + boxblur + overlay)
+        - Làm mờ phụ đề cũ (chỉ làm mờ thông minh khi có phụ đề xuất hiện trên màn hình, tự động ẩn khi không có phụ đề)
         - Đóng cứng phụ đề tiếng Việt (subtitles filter chuẩn tốc độ 1.2x)
         - Hòa âm giọng đọc CapCut + Nhạc nền (TTS + BGM amix + atempo=1.2x)
         """
@@ -150,24 +189,29 @@ class VideoCompositor:
             scaled_srt_path = output_path.parent / f"{output_path.stem}_scaled_{final_speed}x.srt"
             burn_srt_file = self.scale_srt_file(srt_file, scaled_srt_path, final_speed)
 
-        # 1. Xây dựng video filter
+        # Lấy danh sách khoảng thời gian có phụ đề (trên timeline xuất bản)
+        sub_intervals = self.parse_srt_intervals(burn_srt_file) if has_subtitles else []
+        has_valid_subs = len(sub_intervals) > 0
+
+        # 1. Xây dựng video filter (Làm mờ động thông minh: chỉ mờ khi có sub hiển thị, không có sub thì giữ nguyên video gốc)
         v_filter_parts = []
-        if self.config.blur_region.enabled and w >= 4 and h >= 4:
+        if self.config.blur_region.enabled and w >= 4 and h >= 4 and has_valid_subs:
+            # Tạo biểu thức enable cho overlay chỉ kích hoạt trong các khoảng thời gian có phụ đề
+            enable_expr = "+".join(f"between(t,{st:.3f},{en:.3f})" for st, en in sub_intervals)
+            escaped_srt = self._escape_ffmpeg_path(burn_srt_file)
+            force_style = self.build_force_style_string()
             v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS,format=yuv420p,split=2[v_speed][v_crop];")
             v_filter_parts.append(f"[v_crop]crop={w}:{h}:{x}:{y},boxblur={safe_power}:5[v_blurred];")
-            if has_subtitles:
-                escaped_srt = self._escape_ffmpeg_path(burn_srt_file)
-                force_style = self.build_force_style_string()
-                v_filter_parts.append(f"[v_speed][v_blurred]overlay={x}:{y},subtitles='{escaped_srt}':force_style='{force_style}'[v_out]")
-            else:
-                v_filter_parts.append(f"[v_speed][v_blurred]overlay={x}:{y}[v_out]")
+            v_filter_parts.append(f"[v_speed][v_blurred]overlay={x}:{y}:enable='{enable_expr}',subtitles='{escaped_srt}':force_style='{force_style}'[v_out]")
+        elif has_valid_subs:
+            # Có phụ đề nhưng người dùng tắt tùy chọn làm mờ
+            escaped_srt = self._escape_ffmpeg_path(burn_srt_file)
+            force_style = self.build_force_style_string()
+            v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS,format=yuv420p,subtitles='{escaped_srt}':force_style='{force_style}'[v_out]")
         else:
-            if has_subtitles:
-                escaped_srt = self._escape_ffmpeg_path(burn_srt_file)
-                force_style = self.build_force_style_string()
-                v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS,format=yuv420p,subtitles='{escaped_srt}':force_style='{force_style}'[v_out]")
-            else:
-                v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS,format=yuv420p[v_out]")
+            # Hoàn toàn không có phụ đề: Giữ nguyên video gốc sắc nét, tuyệt đối không làm mờ
+            logger.info("Video không có phụ đề (hoặc file phụ đề rỗng) -> Tự động bỏ làm mờ để giữ nguyên hình ảnh gốc sắc nét đẹp mắt.")
+            v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS,format=yuv420p[v_out]")
 
         v_filter_str = "".join(v_filter_parts)
 
@@ -182,7 +226,7 @@ class VideoCompositor:
             tts_vol = self.config.tts_volume
             a_filter_str = (
                 f";[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume={tts_vol}[tts];"
-                f"[2:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume={bgm_vol}[bgm];"
+                f"[2:a]aloop=loop=-1:size=2e+09,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume={bgm_vol}[bgm];"
                 f"[tts][bgm]amix=inputs=2:duration=first:dropout_transition=2:normalize=0{atempo_filter}[a_out]"
             )
             full_filter = v_filter_str + a_filter_str

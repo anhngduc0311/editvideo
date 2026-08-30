@@ -27,9 +27,9 @@ class BlurRegion:
     height: Optional[int] = None  # Chiều cao vùng mờ - None để tính theo tỷ lệ
     
     # Tỷ lệ mặc định theo kích thước video (nếu không set pixel cứng)
-    y_ratio: float = 0.72         # Vị trí bắt đầu mờ từ 72% chiều cao video
-    height_ratio: float = 0.18    # Chiều cao vùng mờ chiếm 18% chiều cao video
-    blur_power: int = 15          # Độ mờ của filter boxblur (lpower:rpower)
+    y_ratio: float = 0.70         # Vị trí bắt đầu mờ từ 70% chiều cao video
+    height_ratio: float = 0.25    # Chiều cao vùng mờ chiếm 25% chiều cao video (từ 70% đến 95% che trọn phụ đề gốc)
+    blur_power: int = 20          # Độ mờ của filter boxblur (lpower:rpower)
     enabled: bool = True
 
 
@@ -457,8 +457,9 @@ class PipelineConfig:
     video_preset: str = "medium"
     
     # Audio Settings
-    keep_bgm: bool = False               # Mặc định Mute giọng Trung cũ để thay thế hoàn toàn bằng giọng Tiếng Việt
+    keep_bgm: bool = False               # Mặc định TẮT âm thanh gốc để loại bỏ 100% tiếng Trung cũ
     bgm_volume: float = 0.25
+    custom_bgm_path: Optional[str] = None # Đường dẫn file nhạc nền riêng (nếu có)
     tts_volume: float = 1.00
     audio_ducking: bool = True
     

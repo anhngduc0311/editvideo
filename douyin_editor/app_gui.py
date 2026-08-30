@@ -397,22 +397,22 @@ class DouyinEditorApp(ctk.CTk):
         blur_row.pack(fill="x", padx=12, pady=(2, 10))
         blur_row.grid_columnconfigure((0, 1), weight=1)
 
-        self.lbl_blur_y_title = ctk.CTkLabel(blur_row, text="Vị trí mờ (Y): 72%")
+        self.lbl_blur_y_title = ctk.CTkLabel(blur_row, text="Vị trí mờ (Y): 70%")
         self.lbl_blur_y_title.grid(row=0, column=0, sticky="w")
         self.slider_blur_y = ctk.CTkSlider(
             blur_row, from_=0.0, to=0.95, number_of_steps=95,
             command=self._on_blur_slider_changed
         )
-        self.slider_blur_y.set(0.72)
+        self.slider_blur_y.set(0.70)
         self.slider_blur_y.grid(row=1, column=0, sticky="ew", padx=(0, 6))
 
-        self.lbl_blur_h_title = ctk.CTkLabel(blur_row, text="Độ cao mờ (H): 18%")
+        self.lbl_blur_h_title = ctk.CTkLabel(blur_row, text="Độ cao mờ (H): 24%")
         self.lbl_blur_h_title.grid(row=0, column=1, sticky="w")
         self.slider_blur_h = ctk.CTkSlider(
             blur_row, from_=0.05, to=0.40, number_of_steps=35,
             command=self._on_blur_slider_changed
         )
-        self.slider_blur_h.set(0.18)
+        self.slider_blur_h.set(0.24)
         self.slider_blur_h.grid(row=1, column=1, sticky="ew", padx=(6, 0))
 
         # 5. Card TTS & BGM
@@ -453,26 +453,45 @@ class DouyinEditorApp(ctk.CTk):
         )
         self.btn_preview_voice.pack(side="left")
 
-        self.chk_bgm = ctk.CTkCheckBox(
-            audio_card,
-            text="Tách giọng gốc & giữ lại BGM (Chỉ bật nếu video có nhạc nền stereo)",
-            font=ctk.CTkFont(size=12)
-        )
-        self.chk_bgm.deselect() # Mặc định tắt để thay thế 100% bằng giọng đọc Tiếng Việt trong trẻo
-        self.chk_bgm.pack(anchor="w", padx=12, pady=(8, 2))
+        # Hàng chọn file nhạc nền riêng (Tùy chọn)
+        custom_bgm_row = ctk.CTkFrame(audio_card, fg_color="transparent")
+        custom_bgm_row.pack(fill="x", padx=12, pady=(6, 4))
 
-        ctk.CTkLabel(
-            audio_card,
-            text="💡 Khuyên dùng: Mặc định TẮT để Mute 100% tiếng Trung cũ, lồng tiếng Việt chuẩn rõ nét.",
+        self.custom_bgm_path_var = tk.StringVar(value="")
+        self.lbl_custom_bgm = ctk.CTkLabel(
+            custom_bgm_row,
+            text="🎵 Nhạc nền: (Mặc định Mute - Sạch 100% tiếng Trung)",
             font=ctk.CTkFont(size=11),
-            text_color="gray70",
-            wraplength=480,
-            justify="left"
-        ).pack(anchor="w", padx=12, pady=(0, 6))
+            text_color="#10b981"
+        )
+        self.lbl_custom_bgm.pack(side="left", fill="x", expand=True)
+
+        self.btn_choose_bgm = ctk.CTkButton(
+            custom_bgm_row,
+            text="🎵 Chọn MP3 riêng...",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            width=135,
+            height=28,
+            fg_color="#3b82f6",
+            hover_color="#2563eb",
+            command=self._choose_custom_bgm
+        )
+        self.btn_choose_bgm.pack(side="right", padx=(4, 0))
+
+        self.btn_clear_bgm = ctk.CTkButton(
+            custom_bgm_row,
+            text="✖",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            width=28,
+            height=28,
+            fg_color="#ef4444",
+            hover_color="#dc2626",
+            command=self._clear_custom_bgm
+        )
 
         bgm_vol_row = ctk.CTkFrame(audio_card, fg_color="transparent")
         bgm_vol_row.pack(fill="x", padx=12, pady=(2, 4))
-        ctk.CTkLabel(bgm_vol_row, text="Âm lượng nhạc nền BGM (nếu bật):").pack(side="left")
+        ctk.CTkLabel(bgm_vol_row, text="Âm lượng nhạc nền (nếu chọn):").pack(side="left")
         self.lbl_bgm_vol = ctk.CTkLabel(bgm_vol_row, text="25%", text_color="#38bdf8")
         self.lbl_bgm_vol.pack(side="right")
 
@@ -804,6 +823,26 @@ class DouyinEditorApp(ctk.CTk):
 
         threading.Thread(target=_work, daemon=True).start()
 
+    def _choose_custom_bgm(self):
+        from tkinter import filedialog
+        file_path = filedialog.askopenfilename(
+            title="Chọn file nhạc nền BGM riêng (MP3/WAV)",
+            filetypes=[("Audio Files", "*.mp3 *.wav *.aac *.m4a *.flac"), ("All Files", "*.*")]
+        )
+        if file_path:
+            self.custom_bgm_path_var.set(file_path)
+            p = Path(file_path)
+            disp_name = f"🎵 Nhạc riêng: {p.name[:20]}..." if len(p.name) > 20 else f"🎵 Nhạc riêng: {p.name}"
+            self.lbl_custom_bgm.configure(text=disp_name, text_color="#38bdf8")
+            self.btn_clear_bgm.pack(side="right", padx=(4, 0))
+            self._append_log(f"Đã chọn file nhạc nền riêng (sạch 100%): {p.name}", "INFO")
+
+    def _clear_custom_bgm(self):
+        self.custom_bgm_path_var.set("")
+        self.lbl_custom_bgm.configure(text="🎵 Nhạc nền: (Mặc định Mute - Sạch 100% tiếng Trung)", text_color="#10b981")
+        self.btn_clear_bgm.pack_forget()
+        self._append_log("Đã bỏ chọn nhạc nền riêng -> Tắt 100% âm thanh gốc để không lẫn tiếng Trung.", "INFO")
+
     def _open_get_key_url(self):
         choice = self.seg_provider.get()
         if "DeepSeek" in choice:
@@ -1061,7 +1100,7 @@ class DouyinEditorApp(ctk.CTk):
 
         speed_factor = float(self.slider_speed.get())
         final_speed = float(self.slider_final_speed.get()) if hasattr(self, "slider_final_speed") else 1.20
-        keep_bgm = bool(self.chk_bgm.get())
+        keep_bgm = bool(self.chk_bgm.get()) if hasattr(self, "chk_bgm") else False
         bgm_vol = float(self.slider_bgm_vol.get())
         font_name = self.cmb_font.get()
         font_size = int(self.cmb_font_size.get())
@@ -1089,6 +1128,7 @@ class DouyinEditorApp(ctk.CTk):
             final_speed=final_speed,
             keep_bgm=keep_bgm,
             bgm_volume=bgm_vol,
+            custom_bgm_path=self.custom_bgm_path_var.get().strip() or None if hasattr(self, "custom_bgm_path_var") else None,
             cookie_config=cookie_cfg,
             blur_region=self.current_blur_region,
             subtitle_style=sub_style,
