@@ -231,6 +231,77 @@ class VietnameseTTSSynchronizer:
 
         return sound
 
+    @classmethod
+    def split_subtitles_into_short_sentences(cls, subtitles: List[SubtitleItem]) -> List[SubtitleItem]:
+        """
+        Tách các khối phụ đề chứa nhiều câu thành từng câu ngắn riêng biệt.
+        Tính toán lại timeline ước tính để từng câu được đọc và hiển thị độc lập,
+        khớp chính xác với giọng đọc và chỉ hiển thị 1 câu ngắn trên màn hình tại một thời điểm.
+        """
+        output_items: List[SubtitleItem] = []
+        global_idx = 1
+
+        for item in subtitles:
+            raw_text = item.text.strip()
+            if not raw_text:
+                continue
+
+            # Tách theo các dấu kết thúc câu (. ! ? … ; \n)
+            sentence_parts = [p.strip() for p in re.split(r'(?<=[.!?…;\n])\s+', raw_text) if p.strip()]
+            
+            # Làm sạch và tách nhỏ các câu quá dài có dấu phẩy
+            refined_sentences: List[str] = []
+            for part in sentence_parts:
+                part = part.strip()
+                if not part:
+                    continue
+                words = part.split()
+                if len(words) >= 12 and "," in part:
+                    comma_split = [cp.strip() for cp in re.split(r',\s*', part) if cp.strip()]
+                    if len(comma_split) == 2 and all(len(cp.split()) >= 4 for cp in comma_split):
+                        refined_sentences.extend(comma_split)
+                        continue
+                refined_sentences.append(part)
+
+            if not refined_sentences:
+                continue
+
+            if len(refined_sentences) == 1:
+                output_items.append(
+                    SubtitleItem(
+                        index=global_idx,
+                        start_seconds=item.start_seconds,
+                        end_seconds=item.end_seconds,
+                        start_str=item.start_str,
+                        end_str=item.end_str,
+                        text=refined_sentences[0]
+                    )
+                )
+                global_idx += 1
+            else:
+                # Phân bổ timeline ước tính theo tỷ lệ độ dài ký tự của từng câu
+                total_chars = sum(max(1, len(s)) for s in refined_sentences)
+                block_dur = max(0.5, item.end_seconds - item.start_seconds)
+                cur_start = item.start_seconds
+
+                for s_text in refined_sentences:
+                    s_dur = block_dur * (len(s_text) / total_chars)
+                    s_end = cur_start + s_dur
+                    output_items.append(
+                        SubtitleItem(
+                            index=global_idx,
+                            start_seconds=cur_start,
+                            end_seconds=s_end,
+                            start_str=format_timestamp(cur_start),
+                            end_str=format_timestamp(s_end),
+                            text=s_text
+                        )
+                    )
+                    global_idx += 1
+                    cur_start = s_end
+
+        return output_items
+
     def generate_and_sync(
         self,
         subtitles: List[SubtitleItem],
@@ -240,7 +311,7 @@ class VietnameseTTSSynchronizer:
     ) -> Tuple[Path, List[SubtitleItem]]:
         """
         Tạo file audio tổng hợp và đồng bộ chính xác phụ đề từng câu theo giọng nói thực tế.
-        Đảm bảo giọng đọc nói HẾT CÂU, trọn vẹn cảm xúc, không bị nuốt chữ hay ngắt cụt.
+        Đảm bảo hiển thị TỪNG CÂU một, giọng đọc nói HẾT CÂU và khớp chính xác 100% với phụ đề.
         :return: (output_audio_path, synced_subtitles)
         """
         output_audio_path = Path(output_audio_path).resolve()
@@ -251,9 +322,11 @@ class VietnameseTTSSynchronizer:
 
         master_track = AudioSegment.silent(duration=total_ms)
 
-        # 1. Chuẩn bị danh sách các câu hoàn chỉnh
+        # 1. Tách phụ đề thành từng câu ngắn độc lập để hiển thị và đọc từng câu riêng biệt
+        split_subtitles = self.split_subtitles_into_short_sentences(subtitles)
+
         valid_items: List[Tuple[int, SubtitleItem, str]] = []
-        for idx, item in enumerate(subtitles):
+        for idx, item in enumerate(split_subtitles):
             cleaned = self._clean_text(item.text)
             if cleaned:
                 valid_items.append((idx, item, cleaned))

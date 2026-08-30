@@ -77,21 +77,12 @@ def main():
     args = parse_arguments()
 
     if args.check_api:
-        provider = args.provider.lower()
-        if provider == "deepseek":
-            key = args.deepseek_key
-            if not key:
-                key = Prompt.ask("[bold cyan]👉 Nhập DeepSeek API Key để kiểm tra[/bold cyan]", password=True)
-            from translator import check_deepseek_api_status
-            console.print("[bold cyan]🔍 Đang kiểm tra trạng thái và Rate Limit từng model DeepSeek...[/bold cyan]")
-            res = check_deepseek_api_status(key, args.deepseek_model)
-        else:
-            key = args.gemini_key
-            if not key:
-                key = Prompt.ask("[bold cyan]👉 Nhập Google Gemini API Key để kiểm tra[/bold cyan]", password=True)
-            from translator import check_gemini_api_status
-            console.print("[bold cyan]🔍 Đang kiểm tra trạng thái và Rate Limit từng model Gemini...[/bold cyan]")
-            res = check_gemini_api_status(key, args.gemini_model)
+        key = args.deepseek_key
+        if not key:
+            key = Prompt.ask("[bold cyan]👉 Nhập DeepSeek API Key để kiểm tra[/bold cyan]", password=True)
+        from translator import check_deepseek_api_status
+        console.print("[bold cyan]🔍 Đang kiểm tra trạng thái và Rate Limit từng model DeepSeek...[/bold cyan]")
+        res = check_deepseek_api_status(key, args.deepseek_model)
 
         console.print(f"\n[bold]{res.get('message')}[/bold]\n")
         for m, info in res.get("model_results", {}).items():
@@ -117,19 +108,11 @@ def main():
         console.print("[bold red]Lỗi: Bạn chưa cung cấp link video![/bold red]")
         sys.exit(1)
 
-    provider = args.provider.lower()
     deepseek_key = args.deepseek_key
-    gemini_key = args.gemini_key
-
-    if provider == "deepseek" and not deepseek_key:
+    if not deepseek_key:
         deepseek_key = Prompt.ask("[bold cyan]👉 Nhập DeepSeek API Key[/bold cyan]", password=True)
         if not deepseek_key:
             console.print("[bold red]Lỗi: Bắt buộc phải có DeepSeek API Key![/bold red]")
-            sys.exit(1)
-    elif provider == "gemini" and not gemini_key:
-        gemini_key = Prompt.ask("[bold cyan]👉 Nhập Google Gemini API Key[/bold cyan]", password=True)
-        if not gemini_key:
-            console.print("[bold red]Lỗi: Bắt buộc phải có Gemini API Key![/bold red]")
             sys.exit(1)
 
     cookie_cfg = CookieConfig(
@@ -146,11 +129,9 @@ def main():
     sub_style.font_size = args.font_size
 
     config = PipelineConfig(
-        llm_provider=provider,
+        llm_provider="deepseek",
         deepseek_api_key=deepseek_key,
         deepseek_model_name=args.deepseek_model,
-        gemini_api_key=gemini_key,
-        gemini_model_name=args.gemini_model,
         whisper_model_size=args.whisper_model,
         topic_preset=args.topic,
         speed_factor=args.speed,
