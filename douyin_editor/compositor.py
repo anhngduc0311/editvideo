@@ -183,7 +183,7 @@ class VideoCompositor:
             a_filter_str = (
                 f";[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume={tts_vol}[tts];"
                 f"[2:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume={bgm_vol}[bgm];"
-                f"[tts][bgm]amix=inputs=2:duration=first:dropout_transition=2:normalize=0{atempo_filter}[a_out]"
+                f"[tts][bgm]amix=inputs=2:duration=first:dropout_transition=2:normalize=0{atempo_filter},alimiter=limit=0.98[a_out]"
             )
             full_filter = v_filter_str + a_filter_str
             cmd = [

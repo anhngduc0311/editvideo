@@ -455,32 +455,43 @@ class DouyinEditorApp(ctk.CTk):
 
         self.chk_bgm = ctk.CTkCheckBox(
             audio_card,
-            text="Tách giọng gốc & giữ lại BGM (Chỉ bật nếu video có nhạc nền stereo)",
-            font=ctk.CTkFont(size=12)
+            text="Tách giọng AI & Giữ nguyên nhạc nền BGM gốc (UVR MDX-Net)",
+            font=ctk.CTkFont(size=12, weight="bold")
         )
-        self.chk_bgm.deselect() # Mặc định tắt để thay thế 100% bằng giọng đọc Tiếng Việt trong trẻo
+        self.chk_bgm.select()  # Mặc định BẬT để tách giọng và giữ nhạc nền gốc
         self.chk_bgm.pack(anchor="w", padx=12, pady=(8, 2))
 
-        ctk.CTkLabel(
-            audio_card,
-            text="💡 Khuyên dùng: Mặc định TẮT để Mute 100% tiếng Trung cũ, lồng tiếng Việt chuẩn rõ nét.",
-            font=ctk.CTkFont(size=11),
-            text_color="gray70",
-            wraplength=480,
-            justify="left"
-        ).pack(anchor="w", padx=12, pady=(0, 6))
+        # Tùy chọn tốc độ tách AI
+        sep_speed_row = ctk.CTkFrame(audio_card, fg_color="transparent")
+        sep_speed_row.pack(fill="x", padx=12, pady=(4, 4))
+        ctk.CTkLabel(sep_speed_row, text="Tốc độ tách AI:").pack(side="left", padx=(0, 6))
+
+        self.cmb_sep_speed = ctk.CTkComboBox(
+            sep_speed_row,
+            values=[
+                "⚡ Siêu Tốc (Turbo 0% Overlap)",
+                "🚀 Rất Nhanh (Fast 25% Overlap)",
+                "⚖ Cân Bằng (Balanced 50% Overlap)",
+                "💎 Chất Lượng Cao (HQ 75% Overlap)"
+            ],
+            width=260
+        )
+        self.cmb_sep_speed.set("⚡ Siêu Tốc (Turbo 0% Overlap)")
+        self.cmb_sep_speed.pack(side="left")
 
         bgm_vol_row = ctk.CTkFrame(audio_card, fg_color="transparent")
-        bgm_vol_row.pack(fill="x", padx=12, pady=(2, 4))
-        ctk.CTkLabel(bgm_vol_row, text="Âm lượng nhạc nền BGM (nếu bật):").pack(side="left")
-        self.lbl_bgm_vol = ctk.CTkLabel(bgm_vol_row, text="25%", text_color="#38bdf8")
+        bgm_vol_row.pack(fill="x", padx=12, pady=(4, 4))
+        ctk.CTkLabel(bgm_vol_row, text="Âm lượng nhạc nền BGM gốc:").pack(side="left")
+        self.lbl_bgm_vol = ctk.CTkLabel(bgm_vol_row, text="100% (Giữ nguyên gốc)", font=ctk.CTkFont(weight="bold"), text_color="#10b981")
         self.lbl_bgm_vol.pack(side="right")
 
         self.slider_bgm_vol = ctk.CTkSlider(
-            audio_card, from_=0.05, to=0.60, number_of_steps=11,
-            command=lambda v: self.lbl_bgm_vol.configure(text=f"{int(v*100)}%")
+            audio_card, from_=0.0, to=1.50, number_of_steps=15,
+            command=lambda v: self.lbl_bgm_vol.configure(
+                text=f"{int(v*100)}% (Giữ nguyên gốc)" if abs(v - 1.0) < 0.05 else f"{int(v*100)}%"
+            )
         )
-        self.slider_bgm_vol.set(0.25)
+        self.slider_bgm_vol.set(1.00)  # Mặc định 100% giữ nguyên âm lượng gốc
         self.slider_bgm_vol.pack(fill="x", padx=12, pady=(0, 10))
 
         # 6. Card Phụ đề tiếng Việt (CapCut Subtitle Style Grid)
@@ -608,13 +619,13 @@ class DouyinEditorApp(ctk.CTk):
         self.step_labels = []
         step_names = [
             "1. Tải Video Douyin (Multi-Engine)",
-            "2. Tiền xử lý (0.70x + Tự chọn Blur)",
-            "3. Whisper / Web Speech-to-Text",
+            "2. Tách Giọng AI & BGM 0.70x (MDX-Net)",
+            "3. Whisper STT (Track Vocals Sạch)",
             "4. Dịch thuật AI (DeepSeek / Gemini)",
-            "5. Tách giọng nói gốc & Giữ BGM",
-            "6. Đọc CapCut TTS & Đồng bộ Phụ đề",
-            "7. Hardcode Phụ đề tiếng Việt",
-            "8. Render Video MP4 Hoàn Thiện"
+            "5. Đọc CapCut TTS & Đồng bộ Timeline",
+            "6. Single-Pass Master Render 0.70x",
+            "7. Đóng Phụ Đề & Mix BGM 100%",
+            "8. Xuất Video MP4 Thành Phẩm"
         ]
 
         for i, name in enumerate(step_names):
@@ -1079,6 +1090,15 @@ class DouyinEditorApp(ctk.CTk):
         if hasattr(self, "chk_bold_sub"):
             sub_style.bold = 1 if self.chk_bold_sub.get() else 0
 
+        sep_speed_val = self.cmb_sep_speed.get() if hasattr(self, "cmb_sep_speed") else "turbo"
+        sep_speed_code = "turbo"
+        if "Fast" in sep_speed_val or "25%" in sep_speed_val:
+            sep_speed_code = "fast"
+        elif "Balanced" in sep_speed_val or "50%" in sep_speed_val:
+            sep_speed_code = "balanced"
+        elif "HQ" in sep_speed_val or "75%" in sep_speed_val:
+            sep_speed_code = "hq"
+
         config = PipelineConfig(
             llm_provider=cur_provider,
             deepseek_api_key=api_key if cur_provider == "deepseek" else self.saved_deepseek_key,
@@ -1089,6 +1109,7 @@ class DouyinEditorApp(ctk.CTk):
             final_speed=final_speed,
             keep_bgm=keep_bgm,
             bgm_volume=bgm_vol,
+            separation_speed=sep_speed_code,
             cookie_config=cookie_cfg,
             blur_region=self.current_blur_region,
             subtitle_style=sub_style,

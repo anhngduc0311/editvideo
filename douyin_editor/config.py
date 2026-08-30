@@ -456,11 +456,13 @@ class PipelineConfig:
     video_crf: int = 18
     video_preset: str = "medium"
     
-    # Audio Settings
-    keep_bgm: bool = False               # Mặc định Mute giọng Trung cũ để thay thế hoàn toàn bằng giọng Tiếng Việt
-    bgm_volume: float = 0.25
+    # Audio Settings (AI Vocal Separation & BGM Preservation)
+    keep_bgm: bool = True                # Mặc định BẬT tách giọng AI & bảo tồn nhạc nền video gốc
+    bgm_volume: float = 1.00             # Giữ nguyên 100% âm lượng nhạc nền gốc
     tts_volume: float = 1.00
-    audio_ducking: bool = True
+    audio_ducking: bool = False
+    vocal_model_name: str = "UVR-MDX-NET-Inst_HQ_3"
+    separation_speed: str = "turbo"      # "turbo" (0%), "fast" (25%), "balanced" (50%), "hq" (75%)
     
     # Cookies & Downloader Settings
     cookie_config: CookieConfig = field(default_factory=CookieConfig)

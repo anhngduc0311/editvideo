@@ -1,125 +1,652 @@
 """
-vocal_separator.py - Vocal Separation and Background Music (BGM) Isolation
+vocal_separator.py - High-Performance AI Vocal & Instrumental Separator (UVR MDX-Net ONNX)
+Tách giọng nói (Vocals) và Nhạc nền (Instrumental / BGM) bằng mô hình Deep Learning UVR MDX-Net,
+hỗ trợ tăng tốc SciPy PocketFFT đa luồng, Zero-copy buffer, xuất file MP3 320kbps và làm chậm 0.70x.
 """
 
+from __future__ import annotations
+
 import logging
+import os
 from pathlib import Path
 import shutil
 import subprocess
-from typing import Optional
-from tqdm import tqdm
+import sys
+import time
+from typing import Callable, Dict, Optional, Tuple, Any, List
+import urllib.request
 
-from config import PipelineConfig
+import numpy as np
+import onnxruntime as ort
+import scipy.fft as sfft
+
+# Tự động nạp static_ffmpeg nếu có
+try:
+    import static_ffmpeg
+    static_ffmpeg.add_paths()
+except Exception:
+    pass
 
 logger = logging.getLogger(__name__)
+
+# Danh mục mô hình UVR MDX-Net ONNX
+MODELS_DATA = {
+    "UVR-MDX-NET-Inst_HQ_3": {
+        "filename": "UVR-MDX-NET-Inst_HQ_3.onnx",
+        "url": "https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR-MDX-NET-Inst_HQ_3.onnx",
+        "dim_f": 3072,
+        "dim_t": 256,
+        "n_fft": 6144,
+        "hop_length": 1024,
+        "sample_rate": 44100,
+        "compensate": 1.035,
+        "target": "instrumental",
+        "name_vi": "MDX-Net Inst HQ 3 (Chuẩn - Khuyên dùng cho Nhạc Nền)",
+        "description": "Tối ưu trọn vẹn dải âm nhạc nền, bass, drums và synths."
+    },
+    "UVR_MDXNET_KIM_Vocal_2": {
+        "filename": "UVR_MDXNET_KIM_Vocal_2.onnx",
+        "url": "https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR_MDXNET_KIM_Vocal_2.onnx",
+        "dim_f": 3072,
+        "dim_t": 256,
+        "n_fft": 6144,
+        "hop_length": 1024,
+        "sample_rate": 44100,
+        "compensate": 1.035,
+        "target": "vocals",
+        "name_vi": "MDX-Net Kim Vocal 2 (Lọc Giọng Nói)",
+        "description": "Chuyên bóc tách giọng nói, loại bỏ tạp âm và nhạc nền."
+    }
+}
+
+SPEED_PRESETS = {
+    "turbo": 0.0,      # 0% Overlap: Siêu tốc ~2.4x real-time
+    "fast": 0.25,      # 25% Overlap: Nhanh
+    "balanced": 0.50,  # 50% Overlap: Cân bằng
+    "hq": 0.75         # 75% Overlap: Chất lượng cao
+}
+
+
+def get_ffmpeg_cmd() -> str:
+    return "ffmpeg"
+
+
+def download_model(
+    model_key: str,
+    models_dir: Path | str = "models",
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None
+) -> str:
+    """Tải ONNX model từ repository nếu chưa có trên máy cục bộ."""
+    if model_key not in MODELS_DATA:
+        raise ValueError(f"Mô hình không hợp lệ: {model_key}")
+
+    models_dir = Path(models_dir).resolve()
+    models_dir.mkdir(parents=True, exist_ok=True)
+    info = MODELS_DATA[model_key]
+    dest_path = models_dir / info["filename"]
+
+    # Kiểm tra file mô hình sẵn có
+    if dest_path.exists() and dest_path.stat().st_size > 10_000_000:
+        return str(dest_path)
+
+    # Kiểm tra ở thư mục cha / models
+    parent_model = models_dir.parent / "models" / info["filename"]
+    if parent_model.exists() and parent_model.stat().st_size > 10_000_000:
+        return str(parent_model)
+
+    # Kiểm tra ở tachgiong/models
+    alt_tachgiong = models_dir.parent / "tachgiong" / "models" / info["filename"]
+    if alt_tachgiong.exists() and alt_tachgiong.stat().st_size > 10_000_000:
+        return str(alt_tachgiong)
+
+    temp_path = str(dest_path) + ".tmp"
+    url = info["url"]
+
+    if progress_callback:
+        progress_callback(0.0, f"Đang tải mô hình AI ({info['filename']})...")
+
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req) as resp:
+        total_size = int(resp.headers.get("Content-Length", 0))
+        downloaded = 0
+        block_size = 1024 * 1024  # 1MB chunks
+
+        with open(temp_path, "wb") as f:
+            while True:
+                if cancel_check and cancel_check():
+                    f.close()
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+                    raise RuntimeError("Quá trình tải mô hình AI đã bị hủy.")
+
+                chunk = resp.read(block_size)
+                if not chunk:
+                    break
+                f.write(chunk)
+                downloaded += len(chunk)
+
+                if total_size > 0 and progress_callback:
+                    pct = downloaded / total_size
+                    mb_down = downloaded / (1024 * 1024)
+                    mb_tot = total_size / (1024 * 1024)
+                    progress_callback(pct, f"Đang tải AI Model: {mb_down:.1f}/{mb_tot:.1f} MB ({pct*100:.1f}%)")
+
+    if dest_path.exists():
+        dest_path.unlink()
+    os.rename(temp_path, str(dest_path))
+
+    if progress_callback:
+        progress_callback(1.0, "Tải mô hình AI thành công!")
+
+    return str(dest_path)
+
+
+def load_audio_waveform(filepath: str | Path, sample_rate: int = 44100) -> Tuple[np.ndarray, float]:
+    """Đọc audio/video ra mảng numpy stereo float32 (2, n_samples) chuẩn 44.1kHz."""
+    filepath = Path(filepath).resolve()
+    if not filepath.exists():
+        raise FileNotFoundError(f"Không tìm thấy file âm thanh/video: {filepath}")
+
+    cmd = [
+        get_ffmpeg_cmd(),
+        "-v", "error",
+        "-threads", "0",
+        "-i", str(filepath),
+        "-vn",
+        "-ar", str(sample_rate),
+        "-ac", "2",
+        "-f", "f32le",
+        "-"
+    ]
+
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        raw_audio, err = proc.communicate()
+    except FileNotFoundError:
+        import soundfile as sf
+        data, sr = sf.read(str(filepath), dtype="float32")
+        if data.ndim == 1:
+            data = np.stack([data, data], axis=0)
+        else:
+            data = data.T
+        duration = data.shape[1] / sr
+        return data, duration
+
+    if proc.returncode != 0:
+        err_msg = err.decode("utf-8", errors="ignore")
+        raise RuntimeError(f"Lỗi khi đọc file bằng FFmpeg: {err_msg}")
+
+    if len(raw_audio) == 0:
+        raise ValueError(f"File không chứa luồng âm thanh hợp lệ: {filepath}")
+
+    audio = np.frombuffer(raw_audio, dtype=np.float32).reshape(-1, 2).T
+    duration = audio.shape[1] / sample_rate
+    return audio, duration
+
+
+def save_audio_waveform(
+    waveform: np.ndarray,
+    output_filepath: str | Path,
+    sample_rate: int = 44100,
+    format_type: str = "mp3",
+    bitrate: str = "320k"
+) -> Path:
+    """Lưu waveform (2, n_samples) ra file MP3 320k hoặc WAV chuẩn phòng thu."""
+    output_filepath = Path(output_filepath).resolve()
+    output_filepath.parent.mkdir(parents=True, exist_ok=True)
+    ext = format_type.lower().strip(".")
+    final_output_path = output_filepath.with_suffix(f".{ext}")
+
+    waveform = np.clip(waveform, -1.0, 1.0)
+    interleaved = waveform.T.astype(np.float32)
+
+    if ext == "wav":
+        import soundfile as sf
+        sf.write(str(final_output_path), interleaved, sample_rate, subtype="PCM_24")
+        return final_output_path
+    elif ext == "flac":
+        import soundfile as sf
+        sf.write(str(final_output_path), interleaved, sample_rate, format="FLAC")
+        return final_output_path
+    else:
+        codec_args = []
+        if ext == "mp3":
+            codec_args = ["-c:a", "libmp3lame", "-b:a", bitrate]
+        elif ext in ["m4a", "aac"]:
+            codec_args = ["-c:a", "aac", "-b:a", bitrate]
+        else:
+            codec_args = ["-b:a", bitrate]
+
+        cmd = [
+            get_ffmpeg_cmd(),
+            "-y",
+            "-v", "error",
+            "-threads", "0",
+            "-f", "f32le",
+            "-ar", str(sample_rate),
+            "-ac", "2",
+            "-i", "pipe:0",
+            *codec_args,
+            str(final_output_path)
+        ]
+
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        _, err = proc.communicate(interleaved.tobytes())
+        if proc.returncode != 0:
+            err_msg = err.decode("utf-8", errors="ignore")
+            # Fallback soundfile WAV nếu codec mp3 gặp lỗi
+            import soundfile as sf
+            wav_fallback = final_output_path.with_suffix(".wav")
+            sf.write(str(wav_fallback), interleaved, sample_rate)
+            return wav_fallback
+
+        return final_output_path
+
+
+def stft_numpy(waveform: np.ndarray, n_fft: int = 6144, hop_length: int = 1024) -> np.ndarray:
+    """STFT đa luồng tăng tốc với SciPy PocketFFT C/C++."""
+    pad_len = n_fft // 2
+    padded = np.pad(waveform, ((0, 0), (pad_len, pad_len)), mode="reflect")
+    window = np.hanning(n_fft).astype(np.float32)
+    n_frames = 1 + (padded.shape[1] - n_fft) // hop_length
+
+    frames = np.lib.stride_tricks.as_strided(
+        padded,
+        shape=(2, n_frames, n_fft),
+        strides=(padded.strides[0], padded.strides[1] * hop_length, padded.strides[1])
+    )
+    windowed = frames * window
+    spec = sfft.rfft(windowed, n=n_fft, axis=-1, workers=-1)
+    return np.transpose(spec, (0, 2, 1)).astype(np.complex64)
+
+
+def istft_numpy(
+    spec: np.ndarray,
+    n_fft: int = 6144,
+    hop_length: int = 1024,
+    length: Optional[int] = None
+) -> np.ndarray:
+    """Inverse STFT đa luồng tăng tốc với SciPy PocketFFT."""
+    spec = np.transpose(spec, (0, 2, 1))
+    window = np.hanning(n_fft).astype(np.float32)
+    n_frames = spec.shape[1]
+
+    frames = sfft.irfft(spec, n=n_fft, axis=-1, workers=-1) * window
+    expected_len = (n_frames - 1) * hop_length + n_fft
+    out = np.zeros((2, expected_len), dtype=np.float32)
+    win_sum = np.zeros(expected_len, dtype=np.float32)
+    win_sq = window ** 2
+
+    for i in range(n_frames):
+        st = i * hop_length
+        out[:, st:st + n_fft] += frames[:, i, :]
+        win_sum[st:st + n_fft] += win_sq
+
+    win_sum = np.where(win_sum > 1e-8, win_sum, 1.0)
+    out /= win_sum
+
+    pad_len = n_fft // 2
+    out = out[:, pad_len:]
+    if length is not None:
+        out = out[:, :length]
+    return out
+
+
+class VocalSeparatorEngine:
+    """
+    AI Vocal & Instrumental Separation Engine sử dụng ONNX Runtime & MDX-Net.
+    Tối ưu hóa đa luồng, Zero-Copy buffer và SciPy PocketFFT.
+    """
+
+    def __init__(self, models_dir: Path | str = "models", cpu_threads: Optional[int] = None):
+        self.models_dir = Path(models_dir).resolve()
+        self.cpu_threads = cpu_threads or min(8, max(2, os.cpu_count() or 4))
+        self.current_model_key: Optional[str] = None
+        self.session: Optional[ort.InferenceSession] = None
+        self.model_info: Optional[Dict[str, Any]] = None
+
+    def load_model(
+        self,
+        model_key: str = "UVR-MDX-NET-Inst_HQ_3",
+        progress_callback: Optional[Callable[[float, str], None]] = None,
+        cancel_check: Optional[Callable[[], bool]] = None
+    ) -> None:
+        """Nạp mô hình ONNX vào bộ nhớ RAM với tối ưu hóa đa luồng."""
+        if self.current_model_key == model_key and self.session is not None:
+            return
+
+        model_path = download_model(
+            model_key=model_key,
+            models_dir=self.models_dir,
+            progress_callback=progress_callback,
+            cancel_check=cancel_check
+        )
+
+        if progress_callback:
+            progress_callback(0.95, f"Đang nạp mô hình AI {model_key}...")
+
+        opts = ort.SessionOptions()
+        opts.intra_op_num_threads = self.cpu_threads
+        opts.inter_op_num_threads = 1
+        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        opts.enable_cpu_mem_arena = True
+        opts.enable_mem_pattern = True
+
+        available_providers = ort.get_available_providers()
+        preferred_providers = []
+        if "CUDAExecutionProvider" in available_providers:
+            preferred_providers.append("CUDAExecutionProvider")
+        if "DmlExecutionProvider" in available_providers:
+            preferred_providers.append("DmlExecutionProvider")
+        preferred_providers.append("CPUExecutionProvider")
+
+        self.session = ort.InferenceSession(model_path, sess_options=opts, providers=preferred_providers)
+        self.current_model_key = model_key
+        self.model_info = MODELS_DATA[model_key]
+
+        if progress_callback:
+            progress_callback(1.0, f"Mô hình {model_key} đã sẵn sàng ({self.cpu_threads} luồng CPU)!")
+
+    def separate_waveform(
+        self,
+        mix: np.ndarray,
+        overlap: float = 0.0,
+        batch_size: int = 1,
+        progress_callback: Optional[Callable[[float, str], None]] = None,
+        cancel_check: Optional[Callable[[], bool]] = None
+    ) -> Dict[str, np.ndarray]:
+        """Tách waveform stereo thành dictionary {'instrumental', 'vocals'}."""
+        if self.session is None or self.model_info is None:
+            raise RuntimeError("Mô hình AI chưa được tải. Hãy gọi load_model() trước.")
+
+        dim_f = self.model_info["dim_f"]
+        dim_t = self.model_info["dim_t"]
+        n_fft = self.model_info["n_fft"]
+        hop_length = self.model_info["hop_length"]
+        compensate = self.model_info["compensate"]
+        target = self.model_info["target"]
+
+        orig_len = mix.shape[1]
+        total_duration = orig_len / 44100.0
+
+        if progress_callback:
+            progress_callback(0.05, "Đang tính ma trận phổ âm thanh (SciPy PocketFFT)...")
+
+        spec = stft_numpy(mix, n_fft=n_fft, hop_length=hop_length)
+        n_frames = spec.shape[2]
+
+        if n_frames < dim_t:
+            pad_frames = dim_t - n_frames
+            spec = np.pad(spec, ((0, 0), (0, 0), (0, pad_frames)), mode="constant")
+            n_frames = dim_t
+
+        spec_f = spec[:, :dim_f, :]
+
+        step = max(1, int(dim_t * (1.0 - overlap)))
+        starts = list(range(0, n_frames - dim_t + 1, step))
+        if len(starts) == 0 or starts[-1] + dim_t < n_frames:
+            starts.append(n_frames - dim_t)
+
+        total_chunks = len(starts)
+        accum_spec = np.zeros_like(spec_f, dtype=np.complex64)
+        weight = np.zeros((1, 1, n_frames), dtype=np.float32)
+
+        chunk_win = np.ones((1, 1, dim_t), dtype=np.float32) if overlap <= 0.01 else np.hanning(dim_t).astype(np.float32)[np.newaxis, np.newaxis, :]
+
+        b_size = max(1, int(batch_size))
+        inp_batch = np.empty((b_size, 4, dim_f, dim_t), dtype=np.float32)
+
+        for i in range(0, total_chunks, b_size):
+            if cancel_check and cancel_check():
+                raise RuntimeError("Quá trình tách âm AI đã bị hủy.")
+
+            cur_starts = starts[i : i + b_size]
+            cur_batch_len = len(cur_starts)
+
+            for b_idx, st in enumerate(cur_starts):
+                c = spec_f[:, :, st : st + dim_t]
+                inp_batch[b_idx, 0] = c[0].real
+                inp_batch[b_idx, 1] = c[0].imag
+                inp_batch[b_idx, 2] = c[1].real
+                inp_batch[b_idx, 3] = c[1].imag
+
+            if cur_batch_len == b_size:
+                out_batch = self.session.run(None, {"input": inp_batch})[0]
+            else:
+                out_batch = self.session.run(None, {"input": inp_batch[:cur_batch_len]})[0]
+
+            for b_idx, st in enumerate(cur_starts):
+                out = out_batch[b_idx]
+                out_l = out[0] + 1j * out[1]
+                out_r = out[2] + 1j * out[3]
+
+                accum_spec[0, :, st : st + dim_t] += out_l * chunk_win[0, 0]
+                accum_spec[1, :, st : st + dim_t] += out_r * chunk_win[0, 0]
+                weight[:, :, st : st + dim_t] += chunk_win
+
+            if progress_callback:
+                processed_count = min(total_chunks, i + cur_batch_len)
+                pct = 0.10 + 0.75 * (processed_count / total_chunks)
+                last_st = cur_starts[-1]
+                processed_sec = min(total_duration, (last_st + dim_t) * hop_length / 44100.0)
+                msg = f"Đang tách âm AI UVR... ({processed_count}/{total_chunks} đoạn | {processed_sec:.1f}s/{total_duration:.1f}s)"
+                progress_callback(pct, msg)
+
+        accum_spec /= np.where(weight > 1e-6, weight, 1.0)
+        full_out_spec = np.pad(accum_spec, ((0, 0), (0, 1), (0, 0)), mode="constant")
+
+        if progress_callback:
+            progress_callback(0.88, "Đang tái tạo dạng sóng âm thanh (iSTFT)...")
+
+        target_wav = istft_numpy(full_out_spec, n_fft=n_fft, hop_length=hop_length, length=orig_len) * compensate
+
+        if target == "instrumental":
+            instrumental = target_wav
+            vocals = mix - instrumental
+        else:
+            vocals = target_wav
+            instrumental = mix - vocals
+
+        if progress_callback:
+            progress_callback(0.95, "Hoàn tất phân tách các track âm thanh!")
+
+        return {
+            "instrumental": instrumental,
+            "vocals": vocals
+        }
 
 
 class VocalSeparator:
     """
-    Module tách giọng nói gốc và giữ lại nhạc nền (BGM) / hiệu ứng âm thanh.
-    Sử dụng Demucs (Hybrid Transformer) hoặc fallback thuật toán FFmpeg Center-Channel Cancellation.
+    Module tích hợp cho Douyin Auto Pipeline:
+    - Tách AI MDX-Net: Xuất BGM nhạc nền gốc ra file MP3 320kbps.
+    - Làm chậm BGM về 0.70x (bằng FFmpeg atempo), giữ nguyên 100% âm lượng gốc.
+    - Làm chậm Vocals tiếng Trung về 0.70x (16kHz mono) cho Whisper STT.
     """
 
-    def __init__(self, config: PipelineConfig):
+    def __init__(self, config: Any):
         self.config = config
+        models_dir = Path(__file__).parent / "models"
+        self.engine = VocalSeparatorEngine(models_dir=models_dir)
 
-    def _is_demucs_available(self) -> bool:
-        """Kiểm tra xem Demucs đã được cài đặt trong môi trường chưa"""
-        try:
-            import demucs
-            return True
-        except ImportError:
-            return False
-
-    def separate_with_demucs(self, audio_path: Path, output_bgm_path: Path) -> Path:
+    def slowdown_audio(
+        self,
+        input_audio: Path,
+        output_audio: Path,
+        speed_factor: float = 0.70,
+        sample_rate: int = 44100,
+        channels: int = 2
+    ) -> Path:
         """
-        Sử dụng Demucs AI để tách giọng nói và lấy kênh BGM (no_vocals / other + bass + drums).
+        Làm chậm âm thanh chính xác bằng FFmpeg atempo, giữ nguyên cao độ (pitch) và âm lượng 100%.
         """
-        import torch
-        from demucs.apply import apply_model
-        from demucs.pretrained import get_model
-        import torchaudio
+        input_audio = Path(input_audio).resolve()
+        output_audio = Path(output_audio).resolve()
+        output_audio.parent.mkdir(parents=True, exist_ok=True)
 
-        logger.info("[Bước 5] Đang nạp mô hình Demucs để tách giọng nói gốc...")
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        logger.info(f"Sử dụng thiết bị xử lý Demucs: {device.upper()}")
+        if speed_factor <= 0:
+            speed_factor = 0.70
 
-        model = get_model("htdemucs")
-        model.to(device)
+        # FFmpeg atempo chỉ nhận giá trị từ 0.5 đến 2.0. Nếu ngoài dải cần ghép nhiều filter.
+        if 0.5 <= speed_factor <= 2.0:
+            filter_str = f"atempo={speed_factor:.4f}"
+        else:
+            factors = []
+            cur = speed_factor
+            while cur < 0.5:
+                factors.append("atempo=0.5")
+                cur /= 0.5
+            while cur > 2.0:
+                factors.append("atempo=2.0")
+                cur /= 2.0
+            factors.append(f"atempo={cur:.4f}")
+            filter_str = ",".join(factors)
 
-        wav, sr = torchaudio.load(str(audio_path))
-        if sr != model.samplerate:
-            resampler = torchaudio.transforms.Resample(sr, model.samplerate)
-            wav = resampler(wav)
-            sr = model.samplerate
+        acodec = "pcm_s16le" if output_audio.suffix.lower() == ".wav" else "libmp3lame"
+        extra_args = ["-b:a", "320k"] if acodec == "libmp3lame" else []
 
-        # Chuẩn hóa về 2 kênh stereo
-        if wav.shape[0] == 1:
-            wav = wav.repeat(2, 1)
-
-        wav = wav.to(device)
-        # wav shape: (channels, samples) -> (batch, channels, samples)
-        ref = wav.mean(0)
-        wav = (wav - ref.mean()) / ref.std()
-
-        logger.info("[Bước 5] Đang thực hiện tách âm thanh (Vocal vs Background)...")
-        with torch.no_grad():
-            sources = apply_model(model, wav[None], device=device, progress=True)[0]
-
-        # Model htdemucs trả về 4 nguồn: drums (0), bass (1), other (2), vocals (3)
-        # BGM = drums + bass + other (tất cả trừ vocals)
-        bgm_tensor = sources[0] + sources[1] + sources[2]
-        bgm_tensor = bgm_tensor * ref.std() + ref.mean()
-
-        torchaudio.save(str(output_bgm_path), bgm_tensor.cpu(), sr)
-        logger.info(f"Đã tách và lưu nhạc nền BGM: {output_bgm_path}")
-        return output_bgm_path
-
-    def separate_with_ffmpeg_fallback(self, audio_path: Path, output_bgm_path: Path) -> Path:
-        """
-        Thuật toán dự phòng bằng FFmpeg: Triệt tiêu giọng nói ở dải âm trung/giữa (Mid/Side vocal removal)
-        """
-        logger.info("[Bước 5 Fallback] Tách giọng bằng bộ lọc âm thanh FFmpeg Vocal Cut...")
-        # Sử dụng filter pan và equalizer để triệt tiêu tần số giọng người ở giữa
-        filter_str = (
-            "pan=stereo|c0=c0-c1|c1=c1-c0,"
-            "highpass=f=120,lowpass=f=12000"
-        )
         cmd = [
-            "ffmpeg", "-y",
-            "-i", str(audio_path),
-            "-af", filter_str,
-            "-ar", "44100",
-            str(output_bgm_path)
+            get_ffmpeg_cmd(),
+            "-y",
+            "-v", "error",
+            "-threads", "0",
+            "-i", str(input_audio),
+            "-filter:a", filter_str,
+            "-ar", str(sample_rate),
+            "-ac", str(channels),
+            "-acodec", acodec,
+            *extra_args,
+            str(output_audio)
         ]
+
         res = subprocess.run(cmd, capture_output=True, text=True)
         if res.returncode != 0:
-            logger.warning(f"Lỗi khi lọc BGM bằng FFmpeg: {res.stderr}. Tạo bản copy audio...")
-            shutil.copyfile(audio_path, output_bgm_path)
-        return output_bgm_path
+            logger.warning(f"Lỗi khi làm chậm audio ({res.stderr}). Tạo bản copy...")
+            shutil.copyfile(input_audio, output_audio)
+
+        return output_audio
+
+    def process_pipeline_audio(
+        self,
+        raw_video_path: Path,
+        session_work_dir: Path,
+        video_id: str,
+        speed_factor: float = 0.70,
+        progress_callback: Optional[Callable[[float, str], None]] = None
+    ) -> Tuple[Path, Path, Path]:
+        """
+        Quy trình chuẩn cho Douyin Editor:
+        1. Tách nhạc nền và giọng nói từ video gốc (1.0x).
+        2. Lưu track nhạc nền gốc ra MP3 320k: `[video_id]_bgm_original.mp3`.
+        3. Làm chậm BGM về 0.70x (stereo 44.1kHz): `[video_id]_bgm_0.70x.wav` (Giữ nguyên 100% âm lượng gốc).
+        4. Làm chậm Vocals về 0.70x (mono 16kHz): `[video_id]_vocals_0.70x_16k.wav` cho Whisper STT.
+
+        :return: (bgm_original_mp3, bgm_slowed_audio, vocals_slowed_audio)
+        """
+        raw_video_path = Path(raw_video_path).resolve()
+        session_work_dir = Path(session_work_dir).resolve()
+        session_work_dir.mkdir(parents=True, exist_ok=True)
+
+        bgm_original_mp3 = session_work_dir / f"{video_id}_bgm_original.mp3"
+        bgm_slowed_audio = session_work_dir / f"{video_id}_bgm_slowed.wav"
+        vocals_original_wav = session_work_dir / f"{video_id}_vocals_original.wav"
+        vocals_slowed_audio = session_work_dir / f"{video_id}_vocals_slowed_16k.wav"
+
+        speed_key = getattr(self.config, "separation_speed", "turbo")
+        overlap = SPEED_PRESETS.get(speed_key, 0.0)
+        model_name = getattr(self.config, "vocal_model_name", "UVR-MDX-NET-Inst_HQ_3")
+
+        logger.info(f"[MDX-Net AI] Bắt đầu tách giọng & BGM từ video gốc ({model_name}, Speed: {speed_key}, Overlap: {overlap*100:.0f}%)...")
+
+        # 1. Nạp mô hình AI
+        self.engine.load_model(
+            model_key=model_name,
+            progress_callback=lambda p, msg: progress_callback(p * 0.20, f"[AI Model] {msg}") if progress_callback else None
+        )
+
+        # 2. Đọc waveform gốc
+        if progress_callback:
+            progress_callback(0.22, "Đang đọc luồng âm thanh gốc từ video...")
+        mix_audio, duration = load_audio_waveform(raw_video_path, sample_rate=44100)
+
+        # 3. Phân tách AI
+        def on_sep_prog(p: float, msg: str):
+            if progress_callback:
+                progress_callback(0.25 + p * 0.55, f"[Tách Âm AI] {msg}")
+
+        stems = self.engine.separate_waveform(
+            mix=mix_audio,
+            overlap=overlap,
+            batch_size=1,
+            progress_callback=on_sep_prog
+        )
+
+        # 4. Xuất BGM nhạc nền gốc ra MP3 320kbps
+        if progress_callback:
+            progress_callback(0.82, "Đang lưu nhạc nền BGM gốc ra file MP3 320kbps...")
+        save_audio_waveform(
+            stems["instrumental"],
+            output_filepath=bgm_original_mp3,
+            sample_rate=44100,
+            format_type="mp3",
+            bitrate="320k"
+        )
+        logger.info(f"Đã lưu track BGM gốc MP3 320k: {bgm_original_mp3}")
+
+        # Xuất Vocals gốc tạm thời
+        save_audio_waveform(
+            stems["vocals"],
+            output_filepath=vocals_original_wav,
+            sample_rate=44100,
+            format_type="wav"
+        )
+
+        # 5. Làm chậm BGM về 0.70x (Giữ nguyên âm lượng 100%)
+        if progress_callback:
+            progress_callback(0.88, f"Đang chuyển đổi tốc độ BGM về {speed_factor:.2f}x (giữ nguyên âm lượng & cao độ)...")
+        self.slowdown_audio(
+            input_audio=bgm_original_mp3,
+            output_audio=bgm_slowed_audio,
+            speed_factor=speed_factor,
+            sample_rate=44100,
+            channels=2
+        )
+        logger.info(f"Đã tạo track BGM {speed_factor:.2f}x: {bgm_slowed_audio}")
+
+        # 6. Làm chậm Vocals về 0.70x (16kHz mono cho Whisper STT)
+        if progress_callback:
+            progress_callback(0.95, f"Đang chuẩn bị track Vocals sạch {speed_factor:.2f}x cho Whisper STT...")
+        self.slowdown_audio(
+            input_audio=vocals_original_wav,
+            output_audio=vocals_slowed_audio,
+            speed_factor=speed_factor,
+            sample_rate=16000,
+            channels=1
+        )
+        logger.info(f"Đã tạo track Vocals {speed_factor:.2f}x cho Whisper: {vocals_slowed_audio}")
+
+        if progress_callback:
+            progress_callback(1.0, "Hoàn tất tách âm thanh & làm chậm 0.70x!")
+
+        return bgm_original_mp3, bgm_slowed_audio, vocals_slowed_audio
 
     def process(self, audio_path: Path, output_bgm_path: Path) -> Optional[Path]:
-        """
-        Tách âm thanh gốc. Nếu `keep_bgm=False` hoặc chưa có Demucs AI, trả về None (Mute hoàn toàn tiếng Trung cũ).
-        """
-        if not self.config.keep_bgm:
-            logger.info("[Bước 5] Cấu hình tắt BGM gốc -> Mute hoàn toàn giọng tiếng Trung cũ.")
+        """Tương thích ngược với interface cũ."""
+        if not getattr(self.config, "keep_bgm", True):
             return None
-
-        audio_path = Path(audio_path).resolve()
-        output_bgm_path = Path(output_bgm_path).resolve()
-        output_bgm_path.parent.mkdir(parents=True, exist_ok=True)
-
-        with tqdm(total=100, desc="[Bước 5] Xóa giọng nói gốc & Tách BGM", leave=False) as pbar:
-            if self._is_demucs_available():
-                try:
-                    self.separate_with_demucs(audio_path, output_bgm_path)
-                    pbar.update(100)
-                    return output_bgm_path
-                except Exception as e:
-                    logger.warning(f"Demucs gặp lỗi ({e}). Để tránh lẫn tiếng Trung, hệ thống sẽ tắt âm thanh cũ.")
-                    return None
-            else:
-                logger.info("[Bước 5] Chưa cài đặt Demucs AI -> Mute hoàn toàn giọng tiếng Trung cũ để giọng đọc Tiếng Việt trong trẻo 100%.")
-                pbar.update(100)
-                return None
+        try:
+            self.engine.load_model()
+            mix, _ = load_audio_waveform(audio_path)
+            stems = self.engine.separate_waveform(mix, overlap=0.0)
+            save_audio_waveform(stems["instrumental"], output_bgm_path, format_type="wav")
+            return output_bgm_path
+        except Exception as e:
+            logger.warning(f"Lỗi khi tách âm thanh ({e}). Bỏ qua...")
+            return None

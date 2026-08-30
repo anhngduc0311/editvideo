@@ -30,7 +30,8 @@ console = Console()
 class DouyinAutoPipeline:
     """
     Quy trình tự động hóa hoàn chỉnh (Pipeline Orchestrator):
-    Thực hiện lần lượt 8 bước từ link Douyin đến video thành phẩm MP4.
+    Thực hiện lần lượt các bước từ link Douyin đến video thành phẩm MP4.
+    Tích hợp AI UVR MDX-Net bóc tách nhạc nền gốc ra MP3 320k, làm chậm 0.70x và giữ 100% âm lượng gốc.
     Hỗ trợ hook callback cho GUI / Web interface.
     """
 
@@ -58,7 +59,8 @@ class DouyinAutoPipeline:
         table.add_column("Cấu hình thiết lập", style="green")
 
         table.add_row("Douyin Input", input_url[:60] + ("..." if len(input_url) > 60 else ""))
-        table.add_row("Tốc độ video (Speed)", f"{self.config.speed_factor}x (Chậm 30%)")
+        table.add_row("Tốc độ video (Speed)", f"{self.config.speed_factor}x (Chậm {int((1-self.config.speed_factor)*100)}%)")
+        table.add_row("Tốc độ xuất bản", f"{getattr(self.config, 'final_speed', 1.20)}x")
         table.add_row("Vùng mờ Sub gốc (Blur)", f"Y: {self.config.blur_region.y_ratio*100:.0f}% | Height: {self.config.blur_region.height_ratio*100:.0f}%")
         table.add_row("Whisper Model", f"{self.config.whisper_model_size} (Lang: {self.config.whisper_language})")
         ai_provider_name = "DeepSeek AI" if getattr(self.config, "llm_provider", "deepseek") == "deepseek" else "Google Gemini"
@@ -66,9 +68,12 @@ class DouyinAutoPipeline:
         table.add_row("AI Dịch thuật", f"{ai_provider_name} ({ai_model_name})")
         table.add_row("Giọng đọc tiếng Việt (TTS)", self.config.tts_config.voice)
         table.add_row("Font chữ Hardsub", f"{self.config.subtitle_style.font_name} (Size: {self.config.subtitle_style.font_size}px)")
-        table.add_row("Tách giọng gốc / BGM", "Bật (Demucs/FFmpeg DSP)" if self.config.keep_bgm else "Tắt (Mute)")
+        
+        sep_status = f"Bật AI MDX-Net ({self.config.separation_speed.upper()})" if self.config.keep_bgm else "Tắt (Mute)"
+        table.add_row("Tách giọng gốc / BGM", sep_status)
+        table.add_row("Âm lượng BGM gốc", f"{int(self.config.bgm_volume * 100)}% (Giữ nguyên âm lượng gốc)")
 
-        console.print(Panel(table, title="[bold yellow]🚀 DOUYIN AUTO VIDEO EDITING PIPELINE (OOP)[/bold yellow]", expand=False))
+        console.print(Panel(table, title="[bold yellow]🚀 DOUYIN AUTO VIDEO EDITING PIPELINE (MDX-NET AI)[/bold yellow]", expand=False))
 
     def run(
         self,
@@ -78,7 +83,7 @@ class DouyinAutoPipeline:
         interactive_roi_callback: Optional[Callable[[Path, BlurRegion], Optional[BlurRegion]]] = None
     ) -> Path:
         """
-        Kích hoạt toàn bộ quy trình 8 bước tự động.
+        Kích hoạt toàn bộ quy trình tự động.
         :param progress_callback: Hàm nhận (current_step, total_steps, step_name, log_message)
         :param interactive_roi_callback: Hàm mở UI cho người dùng khoanh vùng mờ trên video vừa tải
         """
@@ -120,34 +125,50 @@ class DouyinAutoPipeline:
             session_work_dir.mkdir(parents=True, exist_ok=True)
 
             # Khai báo đường dẫn các tài nguyên trung gian
-            slowed_blurred_video = session_work_dir / f"{video_id}_slowed_blurred.mp4"
-            extracted_audio = session_work_dir / f"{video_id}_slowed_audio.wav"
             original_srt = session_work_dir / "original_subtitles.srt"
             raw_vietnamese_srt = session_work_dir / "vietnamese_raw_subtitles.srt"
             synced_vietnamese_srt = session_work_dir / "vietnamese_synced_subtitles.srt"
-            hardsub_video = session_work_dir / f"{video_id}_hardsub.mp4"
-            bgm_audio = session_work_dir / f"{video_id}_bgm_track.wav"
             tts_synced_audio = session_work_dir / f"{video_id}_tts_synced.wav"
             final_output_video = self.config.output_dir / f"output_{video_id}_vi.mp4"
 
-            # ==========================================
-            # BƯỚC 2: TRÍCH XUẤT AUDIO SIÊU TỐC & WHISPER AI (KHÔNG RENDER VIDEO)
-            # ==========================================
-            notify(2, "Bước 2: Trích xuất Audio Siêu Tốc", f"Đang trích xuất audio và giảm tốc độ {self.config.speed_factor}x (không cần render video)...")
-            console.print("[bold cyan]▶ BƯỚC 2: Trích xuất audio 0.70x siêu tốc trong 1-3 giây (Bỏ qua render video)...[/bold cyan]")
-            
             raw_video_info = self.preprocessor.get_video_info(raw_video)
             video_width = raw_video_info["width"]
             video_height = raw_video_info["height"]
-            total_duration = self.preprocessor.extract_audio_for_stt(
-                input_video=raw_video,
-                output_audio=extracted_audio
-            )
+            orig_duration = raw_video_info["duration"]
+            total_duration = orig_duration / self.config.speed_factor if self.config.speed_factor > 0 else orig_duration
 
-            notify(2, "Bước 2: Whisper Speech-to-Text", "Đang nhận diện giọng nói tiếng Trung sang file phụ đề SRT...")
-            console.print("[bold cyan]▶ BƯỚC 2 (tiếp): Whisper AI nhận diện giọng nói tiếng Trung -> SRT...[/bold cyan]")
+            # ==========================================
+            # BƯỚC 2: TÁCH GIỌNG AI MDX-NET, BGM 0.70x & WHISPER STT
+            # ==========================================
+            bgm_track_path: Optional[Path] = None
+
+            if self.config.keep_bgm:
+                notify(2, "Bước 2: Tách Giọng AI MDX-Net", "Đang bóc tách nhạc nền gốc ra MP3 320k & giọng nói tiếng Trung...")
+                console.print("[bold cyan]▶ BƯỚC 2: Tách giọng AI MDX-Net -> Xuất BGM MP3 320k & Làm chậm 0.70x (100% âm lượng)...[/bold cyan]")
+                
+                bgm_orig_mp3, bgm_slowed, vocals_slowed = self.separator.process_pipeline_audio(
+                    raw_video_path=raw_video,
+                    session_work_dir=session_work_dir,
+                    video_id=video_id,
+                    speed_factor=self.config.speed_factor,
+                    progress_callback=lambda p, msg: notify(2, "Bước 2: Tách Giọng AI MDX-Net", msg)
+                )
+                bgm_track_path = bgm_slowed
+                whisper_audio_source = vocals_slowed
+            else:
+                notify(2, "Bước 2: Trích xuất Audio Siêu Tốc", f"Đang trích xuất audio và giảm tốc độ {self.config.speed_factor}x...")
+                extracted_audio = session_work_dir / f"{video_id}_slowed_audio.wav"
+                self.preprocessor.extract_audio_for_stt(
+                    input_video=raw_video,
+                    output_audio=extracted_audio
+                )
+                bgm_track_path = None
+                whisper_audio_source = extracted_audio
+
+            notify(2, "Bước 2: Whisper Speech-to-Text", "Đang nhận diện giọng nói tiếng Trung sang file phụ đề SRT (trên track sạch)...")
+            console.print("[bold cyan]▶ BƯỚC 2 (tiếp): Whisper AI nhận diện giọng nói tiếng Trung trên track Vocals sạch -> SRT...[/bold cyan]")
             self.transcriber.transcribe(
-                audio_path=extracted_audio,
+                audio_path=whisper_audio_source,
                 output_srt=original_srt
             )
             overall_pbar.update(1)
@@ -165,35 +186,24 @@ class DouyinAutoPipeline:
             overall_pbar.update(1)
 
             # ==========================================
-            # BƯỚC 4: XÓA GIỌNG NÓI GỐC & TÁCH BGM
+            # BƯỚC 4: CAPCUT TTS & ĐỒNG BỘ PHỤ ĐỀ TỪNG CÂU KHỚP GIỌNG NÓI
             # ==========================================
-            notify(4, "Bước 4: Tách Vocal & BGM", "Đang tách giọng nói gốc và bảo tồn nhạc nền...")
-            console.print("[bold cyan]▶ BƯỚC 4: Xóa giọng nói gốc và tách nhạc nền (BGM)...[/bold cyan]")
-            bgm_track_path = self.separator.process(
-                audio_path=extracted_audio,
-                output_bgm_path=bgm_audio
-            )
-            overall_pbar.update(1)
-
-            # ==========================================
-            # BƯỚC 5: CAPCUT TTS & ĐỒNG BỘ PHỤ ĐỀ TỪNG CÂU KHỚP GIỌNG NÓI
-            # ==========================================
-            notify(5, "Bước 5: CapCut TTS & Đồng bộ phụ đề", f"Đang đọc giọng {self.config.tts_config.preset_name or self.config.tts_config.voice} và căn khớp từng câu...")
-            console.print(f"[bold cyan]▶ BƯỚC 5: Đọc phụ đề tiếng Việt bằng CapCut TTS ({self.config.tts_config.preset_name}) & đồng bộ timeline từng câu ngắn...[/bold cyan]")
+            notify(4, "Bước 4: CapCut TTS & Đồng bộ phụ đề", f"Đang đọc giọng {self.config.tts_config.preset_name or self.config.tts_config.voice} và căn khớp từng câu...")
+            console.print(f"[bold cyan]▶ BƯỚC 4: Đọc phụ đề tiếng Việt bằng CapCut TTS ({self.config.tts_config.preset_name}) & đồng bộ timeline từng câu ngắn...[/bold cyan]")
             tts_synced_audio, synced_vn_subtitles = self.tts_syncer.generate_and_sync(
                 subtitles=raw_vn_subtitles,
                 total_duration_seconds=total_duration,
                 output_audio_path=tts_synced_audio,
                 output_srt_path=synced_vietnamese_srt
             )
-            overall_pbar.update(1)
+            overall_pbar.update(2)
 
             # ==========================================
-            # BƯỚC 6, 7 & 8: SINGLE-PASS MASTER RENDER (GỘP TẤT CẢ TRONG 1 LẦN RENDER DUY NHẤT)
+            # BƯỚC 5, 6, 7 & 8: SINGLE-PASS MASTER RENDER (GỘP TẤT CẢ TRONG 1 LẦN RENDER DUY NHẤT)
             # ==========================================
             sub_count = len(synced_vn_subtitles) if synced_vn_subtitles else len(raw_vn_subtitles)
-            notify(6, "Bước Cuối: Master Render 1-Pass", f"Đang làm chậm 0.70x, làm mờ sub cũ, đóng {sub_count} câu phụ đề & mix nhạc...")
-            console.print(f"[bold cyan]▶ BƯỚC CUỐI: Single-Pass Master Render (0.70x + Blur + Hardsub {sub_count} câu + Lồng tiếng CapCut & BGM)...[/bold cyan]")
+            notify(6, "Bước Cuối: Master Render 1-Pass", f"Đang làm chậm {self.config.speed_factor:.2f}x, làm mờ sub cũ, đóng {sub_count} câu phụ đề & mix BGM (100% vol)...")
+            console.print(f"[bold cyan]▶ BƯỚC CUỐI: Single-Pass Master Render (0.70x + Blur + Hardsub {sub_count} câu + Lồng tiếng CapCut & BGM 100% âm lượng)...[/bold cyan]")
             final_video = self.compositor.render_single_pass_master(
                 raw_video_path=raw_video,
                 srt_file=synced_vietnamese_srt if synced_vietnamese_srt.exists() else raw_vietnamese_srt,
