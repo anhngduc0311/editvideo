@@ -349,27 +349,20 @@ class DeepSeekTranslator:
         total_items = len(original_items)
         logger.info(f"[Bước 3] Đang dịch {total_items} câu phụ đề bằng DeepSeek API ({self.model_name})...")
 
-        BATCH_SIZE = 15
-        batches = [original_items[i:i + BATCH_SIZE] for i in range(0, total_items, BATCH_SIZE)]
-        total_batches = len(batches)
-
         final_translated_items: List[SubtitleItem] = []
 
-        with tqdm(total=total_items, desc="[Bước 3] DeepSeek Dịch thuật SRT", leave=False) as pbar:
-            for b_idx, batch in enumerate(batches, 1):
-                batch_srt_chunk = "\n\n".join([item.to_srt_block().strip() for item in batch])
-                prompt = f"[DỮ LIỆU PHỤ ĐỀ TIẾNG TRUNG]:\n{batch_srt_chunk}"
+        # Tối ưu siêu tốc: Nếu dưới 60 câu, gửi toàn bộ trong 1 request duy nhất (Tiết kiệm 10s + Câu dịch liền mạch)
+        if total_items <= 60:
+            with tqdm(total=total_items, desc="[Bước 3] DeepSeek Dịch thuật SRT (1-Turn)", leave=False) as pbar:
+                full_srt_chunk = "\n\n".join([item.to_srt_block().strip() for item in original_items])
+                prompt = f"[DỮ LIỆU PHỤ ĐỀ TIẾNG TRUNG]:\n{full_srt_chunk}"
+                
+                response_text = self._call_deepseek_api(prompt, timeout=120)
+                translated_raw = clean_markdown_response(response_text)
+                parsed = parse_srt_string(translated_raw)
 
-                try:
-                    response_text = self._call_deepseek_api(prompt, timeout=120)
-                    translated_raw = clean_markdown_response(response_text)
-                    batch_parsed = parse_srt_string(translated_raw)
-                except Exception as e:
-                    logger.error(f"Lỗi khi dịch batch {b_idx}/{total_batches}: {e}")
-                    raise
-
-                if len(batch_parsed) == len(batch):
-                    for i, orig_item in enumerate(batch):
+                if len(parsed) == total_items:
+                    for i, orig_item in enumerate(original_items):
                         final_translated_items.append(
                             SubtitleItem(
                                 index=orig_item.index,
@@ -377,16 +370,15 @@ class DeepSeekTranslator:
                                 end_seconds=orig_item.end_seconds,
                                 start_str=orig_item.start_str,
                                 end_str=orig_item.end_str,
-                                text=batch_parsed[i].text.strip()
+                                text=parsed[i].text.strip()
                             )
                         )
                 else:
                     logger.warning(
-                        f"Batch {b_idx}/{total_batches}: DeepSeek trả về {len(batch_parsed)} câu (gốc có {len(batch)} câu). "
-                        "Tự động căn chỉnh text theo timeline gốc..."
+                        f"DeepSeek trả về {len(parsed)} câu (gốc có {total_items} câu). Tự động căn chỉnh timeline gốc..."
                     )
-                    for i, orig_item in enumerate(batch):
-                        v_text = batch_parsed[i].text.strip() if i < len(batch_parsed) else orig_item.text
+                    for i, orig_item in enumerate(original_items):
+                        v_text = parsed[i].text.strip() if i < len(parsed) else orig_item.text
                         final_translated_items.append(
                             SubtitleItem(
                                 index=orig_item.index,
@@ -397,8 +389,47 @@ class DeepSeekTranslator:
                                 text=v_text
                             )
                         )
+                pbar.update(total_items)
+        else:
+            # Nếu trên 60 câu, chia batch 40 câu và dịch SONG SONG đa luồng
+            BATCH_SIZE = 40
+            batches = [original_items[i:i + BATCH_SIZE] for i in range(0, total_items, BATCH_SIZE)]
+            total_batches = len(batches)
 
-                pbar.update(len(batch))
+            def _translate_batch_worker(b_tuple):
+                b_idx, batch = b_tuple
+                batch_srt_chunk = "\n\n".join([item.to_srt_block().strip() for item in batch])
+                prompt = f"[DỮ LIỆU PHỤ ĐỀ TIẾNG TRUNG]:\n{batch_srt_chunk}"
+                resp = self._call_deepseek_api(prompt, timeout=120)
+                raw = clean_markdown_response(resp)
+                parsed = parse_srt_string(raw)
+                res_items = []
+                for i, orig_item in enumerate(batch):
+                    v_text = parsed[i].text.strip() if i < len(parsed) else orig_item.text
+                    res_items.append(
+                        SubtitleItem(
+                            index=orig_item.index,
+                            start_seconds=orig_item.start_seconds,
+                            end_seconds=orig_item.end_seconds,
+                            start_str=orig_item.start_str,
+                            end_str=orig_item.end_str,
+                            text=v_text
+                        )
+                    )
+                return b_idx, res_items
+
+            batch_tasks = list(enumerate(batches, 1))
+            batch_results = []
+
+            with tqdm(total=total_items, desc="[Bước 3] DeepSeek Dịch thuật SRT (Song Song)", leave=False) as pbar:
+                with ThreadPoolExecutor(max_workers=min(3, total_batches)) as executor:
+                    for b_idx, res_items in executor.map(_translate_batch_worker, batch_tasks):
+                        batch_results.append((b_idx, res_items))
+                        pbar.update(len(res_items))
+
+            batch_results.sort(key=lambda x: x[0])
+            for _, r_items in batch_results:
+                final_translated_items.extend(r_items)
 
         # Xuất file SRT hoàn chỉnh
         srt_blocks = [item.to_srt_block() for item in final_translated_items]

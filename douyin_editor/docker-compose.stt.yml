@@ -1,0 +1,15 @@
+services:
+  faster-whisper-server:
+    image: fedirz/faster-whisper-server:latest-cpu
+    container_name: douyin-whisper-stt
+    ports:
+      - "8888:8000"
+    environment:
+      - WHISPER__MODEL=Systran/faster-whisper-small
+      - WHISPER__COMPUTE_TYPE=int8
+      - WHISPER__BEAM_SIZE=1
+      - WHISPER__AUTO_DETECT_LANGUAGE=false
+      - WHISPER__TTL=-1
+    restart: unless-stopped
+    volumes:
+      - ./whisper_models:/root/.cache/huggingface

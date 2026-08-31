@@ -113,11 +113,11 @@ class CapCutTTSEngine:
                 task_id = task_info["id"]
                 task_token = task_info["token"]
 
-                # Polling chờ kết quả
+                # Polling chờ kết quả với chu kỳ thích ứng nhanh (0.35s)
                 completed = False
                 payload_data = None
-                for _ in range(25):
-                    time.sleep(0.7)
+                for poll_i in range(35):
+                    time.sleep(0.35)
                     q_url, q_headers, q_body = self.client.build_query_request(
                         task_id, task_token, "sami_text_to_speech"
                     )
@@ -337,30 +337,46 @@ class VietnameseTTSSynchronizer:
             return output_audio_path, []
 
         # 2. Gửi từng batch câu hoàn chỉnh đến CapCut TTS để sinh giọng nói tự nhiên, mượt mà
-        batch_size = 12
+        # 2. Gửi batch câu (lên tới 40 câu/lần) đến CapCut TTS để sinh giọng nói siêu tốc
+        batch_size = 40
         audio_dict: Dict[int, AudioSegment] = {}
         all_texts = [text for _, _, text in valid_items]
 
+        batches = [valid_items[i : i + batch_size] for i in range(0, len(valid_items), batch_size)]
+
+        def _synthesize_batch_worker(batch_data):
+            b_items = batch_data
+            b_texts = [text for _, _, text in b_items]
+            results = self.engine.synthesize_phrases(
+                texts=b_texts,
+                voice=self.tts_config.voice,
+                resource_id=getattr(self.tts_config, "resource_id", "7102355709945188865"),
+                rate=getattr(self.tts_config, "rate", "1.0")
+            )
+            return b_items, results
+
         with tqdm(total=len(valid_items), desc="[Bước 4.1] CapCut TTS Sinh Giọng Đầy Đủ Câu", leave=False) as pbar:
-            for b_start in range(0, len(valid_items), batch_size):
-                b_items = valid_items[b_start : b_start + batch_size]
-                b_texts = [text for _, _, text in b_items]
-
-                batch_results = self.engine.synthesize_phrases(
-                    texts=b_texts,
-                    voice=self.tts_config.voice,
-                    resource_id=getattr(self.tts_config, "resource_id", "7102355709945188865"),
-                    rate=getattr(self.tts_config, "rate", "1.0")
-                )
-
-                for (p_text, a_bytes, dur_ms), (orig_idx, _, _) in zip(batch_results, b_items):
-                    if a_bytes:
-                        try:
-                            seg = AudioSegment.from_file(io.BytesIO(a_bytes))
-                            audio_dict[orig_idx] = seg
-                        except Exception as e:
-                            logger.warning(f"Lỗi nạp audio segment cho '{p_text}': {e}")
-                    pbar.update(1)
+            if len(batches) <= 1:
+                for b_items, batch_results in [_synthesize_batch_worker(batches[0])]:
+                    for (p_text, a_bytes, dur_ms), (orig_idx, _, _) in zip(batch_results, b_items):
+                        if a_bytes:
+                            try:
+                                seg = AudioSegment.from_file(io.BytesIO(a_bytes))
+                                audio_dict[orig_idx] = seg
+                            except Exception as e:
+                                logger.warning(f"Lỗi nạp audio segment cho '{p_text}': {e}")
+                        pbar.update(1)
+            else:
+                with ThreadPoolExecutor(max_workers=min(3, len(batches))) as pool:
+                    for b_items, batch_results in pool.map(_synthesize_batch_worker, batches):
+                        for (p_text, a_bytes, dur_ms), (orig_idx, _, _) in zip(batch_results, b_items):
+                            if a_bytes:
+                                try:
+                                    seg = AudioSegment.from_file(io.BytesIO(a_bytes))
+                                    audio_dict[orig_idx] = seg
+                                except Exception as e:
+                                    logger.warning(f"Lỗi nạp audio segment cho '{p_text}': {e}")
+                            pbar.update(1)
 
         # 3. Đồng bộ hóa Audio vào Master Track đảm bảo NÓI TRỌN VẸN HẾT CÂU
         synced_subtitles: List[SubtitleItem] = []

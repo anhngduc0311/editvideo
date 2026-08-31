@@ -147,7 +147,7 @@ class DouyinEditorApp(ctk.CTk):
 
         subtitle_label = ctk.CTkLabel(
             header_frame,
-            text="yt-dlp • Whisper STT • DeepSeek / Gemini AI Translate • Hardsub • Demucs BGM • CapCut AI TTS",
+            text="🐳 Docker Faster-Whisper STT • DeepSeek / Gemini AI • UVR MDX-Net • CapCut AI TTS (Siêu Tốc)",
             font=ctk.CTkFont(size=12),
             text_color="gray70"
         )

@@ -537,6 +537,7 @@ class PipelineConfig:
     gemini_model_name: str = "gemini-3.6-flash"
     whisper_model_size: str = "small"
     whisper_language: str = "zh"
+    whisper_server_url: str = field(default_factory=lambda: os.getenv("WHISPER_SERVER_URL", "http://localhost:8888"))
     
     # Translation Context & Topic (Chủ đề dịch thuật)
     topic_preset: str = "minecraft_kids" # Mặc định chủ đề Minecraft cho trẻ em
@@ -546,7 +547,7 @@ class PipelineConfig:
     speed_factor: float = 0.70           # Tốc độ làm chậm để AI dịch & đọc tiếng Việt khớp timeline
     final_speed: float = 1.20            # Tốc độ tăng tốc khi render video thành phẩm ở Bước 8 (mặc định 1.2x)
     video_crf: int = 18
-    video_preset: str = "medium"
+    video_preset: str = "ultrafast"
     
     # Audio Settings (AI Vocal Separation & BGM Preservation)
     keep_bgm: bool = True                # Mặc định BẬT tách giọng AI & bảo tồn nhạc nền video gốc

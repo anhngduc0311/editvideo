@@ -88,6 +88,8 @@ device.json
 # ==============================================================================
 .cache/
 models/
+whisper_models/
+/douyin_editor/whisper_models/
 *.pt
 *.pth
 *.bin

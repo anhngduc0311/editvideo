@@ -182,8 +182,8 @@ class VideoCompositor:
         v_filter_str = "".join(v_filter_parts)
 
         # 2. Xây dựng audio filter (kèm atempo=final_speed giữ nguyên pitch)
-        preset = "veryfast" if self.config.video_preset in ["medium", "slow"] else self.config.video_preset
-        crf = str(min(self.config.video_crf, 20))
+        preset = getattr(self.config, "video_preset", "ultrafast")
+        crf = str(min(getattr(self.config, "video_crf", 18), 20))
 
         atempo_filter = f",atempo={final_speed:.4f}" if abs(final_speed - 1.0) >= 0.001 else ""
 
@@ -198,6 +198,7 @@ class VideoCompositor:
             full_filter = v_filter_str + a_filter_str
             cmd = [
                 "ffmpeg", "-y",
+                "-threads", "0",
                 "-i", str(raw_video_path),
                 "-i", str(tts_audio_path),
                 "-i", str(bgm_audio_path),
@@ -218,6 +219,7 @@ class VideoCompositor:
             full_filter = v_filter_str + a_filter_str
             cmd = [
                 "ffmpeg", "-y",
+                "-threads", "0",
                 "-i", str(raw_video_path),
                 "-i", str(tts_audio_path),
                 "-filter_complex", full_filter,

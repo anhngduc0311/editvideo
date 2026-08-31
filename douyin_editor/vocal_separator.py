@@ -306,7 +306,7 @@ class VocalSeparatorEngine:
 
     def __init__(self, models_dir: Path | str = "models", cpu_threads: Optional[int] = None):
         self.models_dir = Path(models_dir).resolve()
-        self.cpu_threads = cpu_threads or min(8, max(2, os.cpu_count() or 4))
+        self.cpu_threads = cpu_threads or max(2, os.cpu_count() or 4)
         self.current_model_key: Optional[str] = None
         self.session: Optional[ort.InferenceSession] = None
         self.model_info: Optional[Dict[str, Any]] = None
@@ -588,49 +588,49 @@ class VocalSeparator:
             progress_callback=on_sep_prog
         )
 
-        # 4. Xuất BGM nhạc nền gốc ra MP3 320kbps
+        # 4 & 5. Xuất file và làm chậm BGM & Vocals SONG SONG bằng ThreadPoolExecutor
         if progress_callback:
-            progress_callback(0.82, "Đang lưu nhạc nền BGM gốc ra file MP3 320kbps...")
-        save_audio_waveform(
-            stems["instrumental"],
-            output_filepath=bgm_original_mp3,
-            sample_rate=44100,
-            format_type="mp3",
-            bitrate="320k"
-        )
-        logger.info(f"Đã lưu track BGM gốc MP3 320k: {bgm_original_mp3}")
+            progress_callback(0.85, "Đang xử lý & làm chậm track BGM và Vocals song song...")
 
-        # Xuất Vocals gốc tạm thời
-        save_audio_waveform(
-            stems["vocals"],
-            output_filepath=vocals_original_wav,
-            sample_rate=44100,
-            format_type="wav"
-        )
+        def _process_bgm_track():
+            save_audio_waveform(
+                stems["instrumental"],
+                output_filepath=bgm_original_mp3,
+                sample_rate=44100,
+                format_type="mp3",
+                bitrate="320k"
+            )
+            self.slowdown_audio(
+                input_audio=bgm_original_mp3,
+                output_audio=bgm_slowed_audio,
+                speed_factor=speed_factor,
+                sample_rate=44100,
+                channels=2
+            )
+            logger.info(f"Đã tạo track BGM {speed_factor:.2f}x: {bgm_slowed_audio}")
 
-        # 5. Làm chậm BGM về 0.70x (Giữ nguyên âm lượng 100%)
-        if progress_callback:
-            progress_callback(0.88, f"Đang chuyển đổi tốc độ BGM về {speed_factor:.2f}x (giữ nguyên âm lượng & cao độ)...")
-        self.slowdown_audio(
-            input_audio=bgm_original_mp3,
-            output_audio=bgm_slowed_audio,
-            speed_factor=speed_factor,
-            sample_rate=44100,
-            channels=2
-        )
-        logger.info(f"Đã tạo track BGM {speed_factor:.2f}x: {bgm_slowed_audio}")
+        def _process_vocals_track():
+            save_audio_waveform(
+                stems["vocals"],
+                output_filepath=vocals_original_wav,
+                sample_rate=44100,
+                format_type="wav"
+            )
+            self.slowdown_audio(
+                input_audio=vocals_original_wav,
+                output_audio=vocals_slowed_audio,
+                speed_factor=speed_factor,
+                sample_rate=16000,
+                channels=1
+            )
+            logger.info(f"Đã tạo track Vocals {speed_factor:.2f}x cho Whisper: {vocals_slowed_audio}")
 
-        # 6. Làm chậm Vocals về 0.70x (16kHz mono cho Whisper STT)
-        if progress_callback:
-            progress_callback(0.95, f"Đang chuẩn bị track Vocals sạch {speed_factor:.2f}x cho Whisper STT...")
-        self.slowdown_audio(
-            input_audio=vocals_original_wav,
-            output_audio=vocals_slowed_audio,
-            speed_factor=speed_factor,
-            sample_rate=16000,
-            channels=1
-        )
-        logger.info(f"Đã tạo track Vocals {speed_factor:.2f}x cho Whisper: {vocals_slowed_audio}")
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            fut_bgm = executor.submit(_process_bgm_track)
+            fut_voc = executor.submit(_process_vocals_track)
+            fut_bgm.result()
+            fut_voc.result()
 
         if progress_callback:
             progress_callback(1.0, "Hoàn tất tách âm thanh & làm chậm 0.70x!")
