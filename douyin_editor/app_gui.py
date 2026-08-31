@@ -70,8 +70,11 @@ class DouyinEditorApp(ctk.CTk):
 
     def _load_saved_settings(self):
         """Đọc cài đặt đã lưu (API Key, Cookie, v.v.)"""
+        self.saved_llm_provider = "deepseek"
         self.saved_deepseek_key = os.getenv("DEEPSEEK_API_KEY", "sk-7731fa779b8a46fda7e9e48c46bce715")
         self.saved_deepseek_model = "deepseek-v4-flash"
+        self.saved_chatgpt_cookie = os.getenv("CHATGPT_COOKIE", "")
+        self.saved_chatgpt_model = "auto"
         self.saved_font_size = "18"
         self.saved_margin_v = "45"
         self.saved_alignment = "2"
@@ -79,8 +82,11 @@ class DouyinEditorApp(ctk.CTk):
         if CONFIG_FILE.exists():
             try:
                 data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+                self.saved_llm_provider = data.get("llm_provider", "deepseek")
                 self.saved_deepseek_key = data.get("deepseek_api_key", self.saved_deepseek_key)
                 self.saved_deepseek_model = data.get("deepseek_model_name", "deepseek-v4-flash")
+                self.saved_chatgpt_cookie = data.get("chatgpt_cookie", self.saved_chatgpt_cookie)
+                self.saved_chatgpt_model = data.get("chatgpt_model_name", "auto")
                 self.saved_cookie_str = data.get("douyin_cookie_str", "")
                 self.saved_cookie_file = data.get("douyin_cookie_file", "")
                 self.saved_browser_name = data.get("douyin_browser_name", "Edge")
@@ -96,11 +102,17 @@ class DouyinEditorApp(ctk.CTk):
         try:
             self.saved_deepseek_key = self.key_entry.get().strip() if hasattr(self, "key_entry") else self.saved_deepseek_key
             self.saved_deepseek_model = self.cmb_ai_model.get().strip() if hasattr(self, "cmb_ai_model") else self.saved_deepseek_model
+            self.saved_chatgpt_cookie = self.chatgpt_cookie_textbox.get("1.0", "end").strip() if hasattr(self, "chatgpt_cookie_textbox") else self.saved_chatgpt_cookie
+            self.saved_chatgpt_model = self.cmb_chatgpt_model.get().strip() if hasattr(self, "cmb_chatgpt_model") else self.saved_chatgpt_model
+
+            current_provider = "chatgpt_cookie" if hasattr(self, "ai_tabview") and "ChatGPT" in self.ai_tabview.get() else "deepseek"
 
             data = {
-                "llm_provider": "deepseek",
+                "llm_provider": current_provider,
                 "deepseek_api_key": self.saved_deepseek_key,
                 "deepseek_model_name": self.saved_deepseek_model,
+                "chatgpt_cookie": self.saved_chatgpt_cookie,
+                "chatgpt_model_name": self.saved_chatgpt_model,
                 "douyin_cookie_str": self.cookie_textbox.get("1.0", "end").strip() if hasattr(self, "cookie_textbox") else "",
                 "douyin_cookie_file": getattr(self, "selected_cookie_file_path", ""),
                 "douyin_browser_name": self.cmb_browser.get() if hasattr(self, "cmb_browser") else "Edge",
@@ -233,76 +245,139 @@ class DouyinEditorApp(ctk.CTk):
         )
         btn_browse_cookie.grid(row=0, column=1, padx=(8, 0))
 
-        # 3. Card AI Translation API Key (DeepSeek API)
+        # 3. Card AI Translation Provider (DeepSeek API & ChatGPT Web Cookie)
         key_card = ctk.CTkFrame(left_scroll, corner_radius=8)
         key_card.pack(fill="x", padx=5, pady=5)
 
         provider_header_row = ctk.CTkFrame(key_card, fg_color="transparent")
-        provider_header_row.pack(fill="x", padx=12, pady=(10, 4))
-        ctk.CTkLabel(provider_header_row, text="🤖 AI Dịch Thuật Phụ Đề (DeepSeek API):", font=ctk.CTkFont(size=14, weight="bold")).pack(side="left")
+        provider_header_row.pack(fill="x", padx=12, pady=(10, 2))
+        ctk.CTkLabel(provider_header_row, text="🤖 AI Dịch Thuật Phụ Đề (DeepSeek / ChatGPT Cookie):", font=ctk.CTkFont(size=14, weight="bold")).pack(side="left")
 
-        self.lbl_key_title = ctk.CTkLabel(
-            key_card,
-            text="🔑 DeepSeek API Key:",
-            font=ctk.CTkFont(size=13, weight="bold")
-        )
-        self.lbl_key_title.pack(anchor="w", padx=12, pady=(4, 2))
+        self.ai_tabview = ctk.CTkTabview(key_card, height=160)
+        self.ai_tabview.pack(fill="x", padx=12, pady=(0, 4))
 
-        key_row = ctk.CTkFrame(key_card, fg_color="transparent")
-        key_row.pack(fill="x", padx=12, pady=(2, 8))
+        tab_deepseek = self.ai_tabview.add("🔹 DeepSeek API")
+        tab_chatgpt = self.ai_tabview.add("🟢 ChatGPT Web (Cookie)")
+
+        # ----- TAB 1: DEEPSEEK API -----
+        key_row = ctk.CTkFrame(tab_deepseek, fg_color="transparent")
+        key_row.pack(fill="x", pady=(2, 6))
         key_row.grid_columnconfigure(0, weight=1)
 
-        self.key_entry = ctk.CTkEntry(key_row, show="•", font=ctk.CTkFont(size=13))
-        self.key_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
-        
+        self.key_entry = ctk.CTkEntry(key_row, show="•", font=ctk.CTkFont(size=12))
+        self.key_entry.grid(row=0, column=0, sticky="ew", padx=(0, 6))
         initial_key = getattr(self, "saved_deepseek_key", "sk-7731fa779b8a46fda7e9e48c46bce715")
         if initial_key:
             self.key_entry.insert(0, initial_key)
 
         self.btn_toggle_key = ctk.CTkButton(
-            key_row, text="👁", width=40, height=28,
+            key_row, text="👁", width=36, height=28,
             command=self._toggle_key_visibility, fg_color="#374151"
         )
-        self.btn_toggle_key.grid(row=0, column=1, padx=(0, 8))
+        self.btn_toggle_key.grid(row=0, column=1, padx=(0, 6))
 
         self.btn_get_key = ctk.CTkButton(
-            key_row, text="Lấy Key", width=70, height=28,
+            key_row, text="Lấy Key", width=65, height=28,
             command=self._open_get_key_url,
             fg_color="#059669", hover_color="#047857"
         )
         self.btn_get_key.grid(row=0, column=2)
 
-        # Model Selector & Test Row
-        model_row = ctk.CTkFrame(key_card, fg_color="transparent")
-        model_row.pack(fill="x", padx=12, pady=(0, 6))
-        self.lbl_model_title = ctk.CTkLabel(
-            model_row,
-            text="Model DeepSeek:",
-            font=ctk.CTkFont(size=12)
-        )
-        self.lbl_model_title.pack(side="left", padx=(0, 8))
+        model_row = ctk.CTkFrame(tab_deepseek, fg_color="transparent")
+        model_row.pack(fill="x", pady=(0, 4))
+        ctk.CTkLabel(model_row, text="Model:", font=ctk.CTkFont(size=12)).pack(side="left", padx=(0, 6))
 
         deepseek_models = ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v4-flash-vision-exp", "deepseek-chat"]
         initial_model_val = getattr(self, "saved_deepseek_model", "deepseek-v4-flash")
-
-        self.cmb_ai_model = ctk.CTkComboBox(
-            model_row,
-            values=deepseek_models,
-            width=200
-        )
+        self.cmb_ai_model = ctk.CTkComboBox(model_row, values=deepseek_models, width=190)
         self.cmb_ai_model.set(initial_model_val)
         self.cmb_ai_model.pack(side="left", padx=(0, 8))
 
         self.btn_check_key = ctk.CTkButton(
-            model_row, text="⚡ Test API & Limit", width=140, height=28,
+            model_row, text="⚡ Test API", width=110, height=28,
             command=self._check_api_key_clicked,
             fg_color="#0284c7", hover_color="#0369a1"
         )
         self.btn_check_key.pack(side="left")
 
+        self.lbl_api_status = ctk.CTkLabel(
+            tab_deepseek,
+            text="DeepSeek AI: Tốc độ siêu tốc, dịch chuẩn tự nhiên, chuẩn timeline SRT.",
+            font=ctk.CTkFont(size=11),
+            text_color="#38bdf8",
+            wraplength=470,
+            justify="left"
+        )
+        self.lbl_api_status.pack(anchor="w", pady=(0, 2))
+
+        # ----- TAB 2: CHATGPT WEB COOKIE -----
+        gpt_header = ctk.CTkFrame(tab_chatgpt, fg_color="transparent")
+        gpt_header.pack(fill="x", pady=(0, 2))
+        ctk.CTkLabel(gpt_header, text="🍪 Dán Cookie hoặc __Secure-next-auth.session-token:", font=ctk.CTkFont(size=11)).pack(side="left")
+
+        btn_gpt_help = ctk.CTkButton(
+            gpt_header, text="❓ Hướng dẫn", width=80, height=22, font=ctk.CTkFont(size=11),
+            command=self._show_chatgpt_cookie_help, fg_color="#4b5563", hover_color="#374151"
+        )
+        btn_gpt_help.pack(side="right")
+
+        self.chatgpt_cookie_textbox = ctk.CTkTextbox(tab_chatgpt, height=46, font=ctk.CTkFont(family="Consolas", size=10))
+        self.chatgpt_cookie_textbox.pack(fill="x", pady=(2, 4))
+        if getattr(self, "saved_chatgpt_cookie", ""):
+            self.chatgpt_cookie_textbox.insert("1.0", self.saved_chatgpt_cookie)
+        else:
+            self.chatgpt_cookie_textbox.insert("1.0", "__Secure-next-auth.session-token=eyJ... (hoặc dán toàn bộ cookie F12)")
+
+        gpt_actions_row = ctk.CTkFrame(tab_chatgpt, fg_color="transparent")
+        gpt_actions_row.pack(fill="x", pady=(2, 2))
+
+        btn_paste_gpt = ctk.CTkButton(
+            gpt_actions_row, text="📋 Dán Clipboard", width=120, height=26, font=ctk.CTkFont(size=11),
+            command=self._paste_chatgpt_cookie_clipboard, fg_color="#059669", hover_color="#047857"
+        )
+        btn_paste_gpt.pack(side="left", padx=(0, 6))
+
+        btn_clear_gpt = ctk.CTkButton(
+            gpt_actions_row, text="🗑 Xóa", width=55, height=26, font=ctk.CTkFont(size=11),
+            command=lambda: self.chatgpt_cookie_textbox.delete("1.0", "end"), fg_color="#4b5563", hover_color="#374151"
+        )
+        btn_clear_gpt.pack(side="left", padx=(0, 6))
+
+        ctk.CTkLabel(gpt_actions_row, text="Model:", font=ctk.CTkFont(size=11)).pack(side="left", padx=(4, 4))
+        self.cmb_chatgpt_model = ctk.CTkComboBox(
+            gpt_actions_row,
+            values=["Tự Động (Auto GPT-4o)", "GPT-4o Mini", "GPT-4o"],
+            width=150, height=26, font=ctk.CTkFont(size=11)
+        )
+        self.cmb_chatgpt_model.set(getattr(self, "saved_chatgpt_model", "Tự Động (Auto GPT-4o)"))
+        self.cmb_chatgpt_model.pack(side="left", padx=(0, 6))
+
+        self.btn_check_chatgpt = ctk.CTkButton(
+            gpt_actions_row, text="🔍 Test Cookie", width=95, height=26, font=ctk.CTkFont(size=11),
+            command=self._check_chatgpt_cookie_clicked,
+            fg_color="#0284c7", hover_color="#0369a1"
+        )
+        self.btn_check_chatgpt.pack(side="left")
+
+        self.lbl_chatgpt_status = ctk.CTkLabel(
+            tab_chatgpt,
+            text="🟢 ChatGPT Web: Miễn phí 100%, dịch cực hay bằng GPT-4o qua tài khoản web của bạn.",
+            font=ctk.CTkFont(size=11),
+            text_color="#10b981",
+            wraplength=470,
+            justify="left"
+        )
+        self.lbl_chatgpt_status.pack(anchor="w", pady=(2, 2))
+
+        # Chọn Tab mặc định theo cấu hình đã lưu
+        if getattr(self, "saved_llm_provider", "deepseek") == "chatgpt_cookie":
+            self.ai_tabview.set("🟢 ChatGPT Web (Cookie)")
+        else:
+            self.ai_tabview.set("🔹 DeepSeek API")
+
         # Translation Topic / Context Row
         topic_row = ctk.CTkFrame(key_card, fg_color="transparent")
-        topic_row.pack(fill="x", padx=12, pady=(0, 6))
+        topic_row.pack(fill="x", padx=12, pady=(4, 10))
         ctk.CTkLabel(topic_row, text="🎯 Chủ đề / Ngữ cảnh dịch:", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=(0, 8))
 
         self.cmb_topic = ctk.CTkComboBox(
@@ -317,17 +392,6 @@ class DouyinEditorApp(ctk.CTk):
         )
         self.cmb_topic.set("🎮 Minecraft cho Trẻ Em (Vui nhộn, chuẩn gamer nhí)")
         self.cmb_topic.pack(side="left")
-
-        # Status Label
-        self.lbl_api_status = ctk.CTkLabel(
-            key_card,
-            text="DeepSeek AI Model 'deepseek-v4-flash': Tốc độ siêu tốc, dịch chuẩn tự nhiên, chuẩn timeline SRT.",
-            font=ctk.CTkFont(size=11),
-            text_color="#38bdf8",
-            wraplength=480,
-            justify="left"
-        )
-        self.lbl_api_status.pack(anchor="w", padx=12, pady=(0, 10))
 
         # 4. Card Tùy chọn Xử lý Video (Speed & Blur ROI)
         video_card = ctk.CTkFrame(left_scroll, corner_radius=8)
@@ -926,8 +990,75 @@ class DouyinEditorApp(ctk.CTk):
                 self.after(0, _update_ui)
             except Exception as e:
                 def _err():
-                    self.btn_check_key.configure(state="normal", text="⚡ Test API & Limit")
+                    self.btn_check_key.configure(state="normal", text="⚡ Test API")
                     self.lbl_api_status.configure(text=f"❌ Lỗi khi kiểm tra: {e}", text_color="#f87171")
+                self.after(0, _err)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _show_chatgpt_cookie_help(self):
+        """Hiển thị hướng dẫn chi tiết 3 bước lấy Cookie từ chatgpt.com"""
+        msg = (
+            "👉 CÁCH LẤY COOKIE / SESSION TOKEN CHATGPT (CỰC DỄ TRONG 5 GIÂY):\n\n"
+            "Cách 1: Lấy Token tự động (Khuyên dùng):\n"
+            "1. Mở trình duyệt, truy cập và đăng nhập vào: https://chatgpt.com\n"
+            "2. Mở tab mới, truy cập link: https://chatgpt.com/api/auth/session\n"
+            "3. Copy toàn bộ chuỗi nằm trong ngoặc kép sau \"accessToken\": \"...\" (hoặc copy toàn bộ nội dung JSON) và dán vào đây.\n\n"
+            "Cách 2: Lấy từ F12 DevTools:\n"
+            "1. Tại trang https://chatgpt.com, nhấn phím F12 trên bàn phím.\n"
+            "2. Chọn tab 'Application' (hoặc 'Bộ nhớ lưu trữ') -> chọn mục 'Cookies' -> 'https://chatgpt.com'.\n"
+            "3. Tìm dòng có tên '__Secure-next-auth.session-token', copy toàn bộ giá trị (Value) của nó và dán vào đây.\n\n"
+            "💡 Lưu ý: Cookie ChatGPT hoàn toàn miễn phí, hỗ trợ GPT-4o mượt mà và thường dùng được trong 2-4 tuần trước khi cần lấy lại!"
+        )
+        messagebox.showinfo("Hướng dẫn lấy Cookie ChatGPT Web", msg)
+
+    def _paste_chatgpt_cookie_clipboard(self):
+        """Dán cookie từ clipboard vào ô nhập ChatGPT Cookie"""
+        try:
+            cb_text = self.clipboard_get().strip()
+            if cb_text:
+                self.chatgpt_cookie_textbox.delete("1.0", "end")
+                self.chatgpt_cookie_textbox.insert("1.0", cb_text)
+                self._append_log("Đã dán Cookie ChatGPT từ Clipboard.", "CONFIG")
+        except Exception:
+            pass
+
+    def _check_chatgpt_cookie_clicked(self):
+        """Kiểm tra tính hợp lệ và thời hạn của Cookie ChatGPT"""
+        cookie_text = self.chatgpt_cookie_textbox.get("1.0", "end").strip()
+        if not cookie_text or "eyJ" not in cookie_text and "session-token" not in cookie_text and len(cookie_text) < 30:
+            self.lbl_chatgpt_status.configure(
+                text="⚠️ Vui lòng dán Cookie hoặc Session Token ChatGPT hợp lệ trước khi kiểm tra!",
+                text_color="#fbbf24"
+            )
+            return
+
+        self.btn_check_chatgpt.configure(state="disabled", text="⏳ Đang test...")
+        self.lbl_chatgpt_status.configure(
+            text="⏳ Đang kết nối tới máy chủ ChatGPT Web để xác thực...",
+            text_color="#38bdf8"
+        )
+
+        def _worker():
+            try:
+                from translator import check_chatgpt_cookie_status
+                res = check_chatgpt_cookie_status(cookie_text)
+
+                def _update_ui():
+                    self.btn_check_chatgpt.configure(state="normal", text="🔍 Test Cookie")
+                    status = res.get("status", "")
+                    msg = res.get("message", "")
+                    if res.get("valid"):
+                        self.lbl_chatgpt_status.configure(text=msg, text_color="#34d399")
+                    else:
+                        self.lbl_chatgpt_status.configure(text=msg, text_color="#f87171")
+                    self._append_log(f"[ChatGPT Cookie Check] {msg}", "API")
+
+                self.after(0, _update_ui)
+            except Exception as e:
+                def _err():
+                    self.btn_check_chatgpt.configure(state="normal", text="🔍 Test Cookie")
+                    self.lbl_chatgpt_status.configure(text=f"❌ Lỗi khi kiểm tra cookie: {e}", text_color="#f87171")
                 self.after(0, _err)
 
         threading.Thread(target=_worker, daemon=True).start()
@@ -1163,10 +1294,23 @@ class DouyinEditorApp(ctk.CTk):
             messagebox.showwarning("Cảnh báo", "Vui lòng nhập đường link Video Douyin!")
             return
 
-        api_key = self.key_entry.get().strip()
-        if not api_key:
-            messagebox.showwarning("Cảnh báo", "Vui lòng nhập DeepSeek API Key!")
-            return
+        # Xác định AI Provider được chọn
+        is_chatgpt_tab = hasattr(self, "ai_tabview") and "ChatGPT" in self.ai_tabview.get()
+        llm_provider = "chatgpt_cookie" if is_chatgpt_tab else "deepseek"
+
+        chatgpt_cookie_val = self.chatgpt_cookie_textbox.get("1.0", "end").strip() if hasattr(self, "chatgpt_cookie_textbox") else ""
+        chatgpt_model_val = self.cmb_chatgpt_model.get().strip() if hasattr(self, "cmb_chatgpt_model") else "auto"
+
+        if is_chatgpt_tab:
+            if not chatgpt_cookie_val or "__Secure-next-auth" not in chatgpt_cookie_val and not chatgpt_cookie_val.startswith("eyJ") and len(chatgpt_cookie_val) < 20:
+                messagebox.showwarning("Cảnh báo", "Vui lòng dán Cookie hoặc Session Token ChatGPT vào ô nhập trong tab ChatGPT Web!")
+                return
+            api_key = ""
+        else:
+            api_key = self.key_entry.get().strip()
+            if not api_key:
+                messagebox.showwarning("Cảnh báo", "Vui lòng nhập DeepSeek API Key trong tab DeepSeek API!")
+                return
 
         self._save_settings()
 
@@ -1239,9 +1383,11 @@ class DouyinEditorApp(ctk.CTk):
             topic_code = "general"
 
         config = PipelineConfig(
-            llm_provider="deepseek",
+            llm_provider=llm_provider,
             deepseek_api_key=api_key,
-            deepseek_model_name=self.cmb_ai_model.get().strip(),
+            deepseek_model_name=self.cmb_ai_model.get().strip() if hasattr(self, "cmb_ai_model") else "deepseek-v4-flash",
+            chatgpt_cookie=chatgpt_cookie_val,
+            chatgpt_model_name=chatgpt_model_val,
             topic_preset=topic_code,
             speed_factor=speed_factor,
             final_speed=final_speed,

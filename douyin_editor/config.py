@@ -438,9 +438,6 @@ TRANSLATION_TOPIC_PRESETS = {
             "CHỦ ĐỀ & BỐI CẢNH ĐẶC BIỆT: Video về game MINECRAFT dành cho TRẺ EM / THIẾU NHI / GAME THỦ NHÍ xem.\n\n"
             "1. PHONG CÁCH & VĂN PHONG DÀNH CHO TRẺ EM:\n"
             "- Giọng điệu: Hào hứng, vui tươi, nhí nhảnh, hồi hộp, kịch tính, cuốn hút và dễ thương.\n"
-            "- Xưng hô thân mật, gần gũi: Dùng 'mình', 'tớ', 'tụi mình' và gọi người xem là 'các bạn ơi', 'mọi người ơi', 'các bạn'.\n"
-            "- TUYỆT ĐỐI KHÔNG dùng đại từ cứng nhắc/người lớn như 'tôi - bạn', 'chúng tôi', 'quý vị', 'ngươi - ta'.\n"
-            "- Câu từ trong sáng, giàu cảm xúc cảm thán ('Trời ơi!', 'Cứu mình với!', 'U là trời!', 'Xem này các bạn ơi!', 'Đỉnh chóp quá!', 'Chạy mau thôi!').\n\n"
             "2. BỘ TỪ ĐIỂN THUẬT NGỮ MINECRAFT CHUẨN GAMER VIỆT (BẮT BUỘC SỬ DỤNG ĐÚNG):\n"
             "  • Quái vật & Sinh vật:\n"
             "    - 苦力怕 / 爬行者 -> Creeper (hoặc quái nổ)\n"
@@ -529,11 +526,13 @@ class PipelineConfig:
     """
     Cấu hình toàn bộ quy trình tự động hóa
     """
-    # API & AI Models (DeepSeek / Gemini)
-    llm_provider: str = "deepseek"  # "deepseek" hoặc "gemini"
+    # API & AI Models (DeepSeek / ChatGPT Cookie / Gemini)
+    llm_provider: str = "deepseek"  # "deepseek", "chatgpt_cookie", hoặc "gemini"
     deepseek_api_key: str = field(default_factory=lambda: os.getenv("DEEPSEEK_API_KEY", "sk-7731fa779b8a46fda7e9e48c46bce715"))
     deepseek_model_name: str = "deepseek-v4-flash"
     deepseek_base_url: str = "https://api.deepseek.com"
+    chatgpt_cookie: str = field(default_factory=lambda: os.getenv("CHATGPT_COOKIE", ""))
+    chatgpt_model_name: str = "auto"
     gemini_api_key: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
     gemini_model_name: str = "gemini-3.6-flash"
     whisper_model_size: str = "small"

@@ -62,9 +62,12 @@ class DouyinAutoPipeline:
         table.add_row("Tốc độ video (Speed)", f"{self.config.speed_factor}x (Chậm {int((1-self.config.speed_factor)*100)}%)")
         table.add_row("Tốc độ xuất bản", f"{getattr(self.config, 'final_speed', 1.20)}x")
         table.add_row("Vùng mờ Sub gốc (Blur)", f"Y: {self.config.blur_region.y_ratio*100:.0f}% | Height: {self.config.blur_region.height_ratio*100:.0f}%")
-        table.add_row("Whisper Model", f"{self.config.whisper_model_size} (Lang: {self.config.whisper_language})")
-        ai_model_name = getattr(self.config, "deepseek_model_name", "deepseek-v4-flash")
-        table.add_row("AI Dịch thuật", f"DeepSeek AI ({ai_model_name})")
+        if getattr(self.config, "llm_provider", "deepseek") == "chatgpt_cookie":
+            ai_info = f"ChatGPT Web Cookie ({getattr(self.config, 'chatgpt_model_name', 'auto')})"
+        else:
+            ai_model_name = getattr(self.config, "deepseek_model_name", "deepseek-v4-flash")
+            ai_info = f"DeepSeek AI ({ai_model_name})"
+        table.add_row("AI Dịch thuật", ai_info)
         topic_info = TRANSLATION_TOPIC_PRESETS.get(getattr(self.config, "topic_preset", "minecraft_kids"), {}).get("name", "Minecraft cho Trẻ Em")
         table.add_row("Chủ đề dịch thuật", topic_info)
         table.add_row("Giọng đọc tiếng Việt (TTS)", self.config.tts_config.voice)
@@ -183,10 +186,12 @@ class DouyinAutoPipeline:
             overall_pbar.update(1)
 
             # ==========================================
-            # BƯỚC 3: DỊCH THUẬT VỚI DEEPSEEK AI
+            # BƯỚC 3: DỊCH THUẬT VỚI AI (DEEPSEEK / CHATGPT)
             # ==========================================
-            notify(3, "Bước 3: Dịch thuật DeepSeek", "Đang dịch phụ đề Trung -> Việt giữ nguyên timeline...")
-            console.print(f"[bold cyan]▶ BƯỚC 3: Dịch phụ đề sang Tiếng Việt bằng DeepSeek API ({self.translator.model_name})...[/bold cyan]")
+            provider_title = "ChatGPT Web" if getattr(self.config, "llm_provider", "deepseek") == "chatgpt_cookie" else "DeepSeek"
+            model_info = getattr(self.translator, "model_name", "auto")
+            notify(3, f"Bước 3: Dịch thuật {provider_title}", f"Đang dịch phụ đề Trung -> Việt bằng {provider_title} AI ({model_info})...")
+            console.print(f"[bold cyan]▶ BƯỚC 3: Dịch phụ đề sang Tiếng Việt bằng {provider_title} AI ({model_info})...[/bold cyan]")
             raw_vn_subtitles = self.translator.translate_srt(
                 input_srt_path=original_srt,
                 output_srt_path=raw_vietnamese_srt
