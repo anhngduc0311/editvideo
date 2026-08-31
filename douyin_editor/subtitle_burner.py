@@ -32,9 +32,11 @@ class SubtitleBurner:
             raw_str = raw_str[0] + "\\:" + raw_str[2:]
         return raw_str.replace("'", "\\'").replace("[", "\\[").replace("]", "\\]")
 
-    def build_force_style_string(self) -> str:
+    def build_force_style_string(self, video_width: int = 1280, video_height: int = 720) -> str:
         s = self.style
         style_parts = [
+            f"PlayResX={video_width}",
+            f"PlayResY={video_height}",
             f"FontName={s.font_name}",
             f"FontSize={s.font_size}",
             f"PrimaryColour={s.primary_color}",

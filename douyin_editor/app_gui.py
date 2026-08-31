@@ -47,10 +47,16 @@ class DouyinEditorApp(ctk.CTk):
         self.is_running = False
         self.last_output_video: Path = None
 
-        # Cấu hình Mẫu Phụ Đề CapCut hiện tại
-        self.selected_sub_preset_id = "capcut_default"
+        self.saved_api_key = ""
+        self.saved_cookie_str = ""
+        self.saved_cookie_file = ""
+        self.saved_browser_name = "Edge"
+        self._load_saved_settings()
+
+        # Cấu hình Mẫu Phụ Đề CapCut hiện tại (Mặc định: Chữ trắng hộp đen Georgia)
+        self.selected_sub_preset_id = getattr(self, "saved_sub_preset", "badge_white_on_black")
         self.sub_preset_buttons: Dict[str, ctk.CTkButton] = {}
-        self.current_subtitle_style = copy.copy(SUBTITLE_PRESETS["capcut_default"]["style"])
+        self.current_subtitle_style = copy.copy(SUBTITLE_PRESETS.get(self.selected_sub_preset_id, SUBTITLE_PRESETS["badge_white_on_black"])["style"])
 
         # Vùng làm mờ hiện tại
         self.current_blur_region = BlurRegion(
@@ -60,12 +66,6 @@ class DouyinEditorApp(ctk.CTk):
             enabled=True
         )
 
-        self.saved_api_key = ""
-        self.saved_cookie_str = ""
-        self.saved_cookie_file = ""
-        self.saved_browser_name = "Edge"
-        self._load_saved_settings()
-
         self._build_ui()
 
     def _load_saved_settings(self):
@@ -73,7 +73,9 @@ class DouyinEditorApp(ctk.CTk):
         self.saved_deepseek_key = os.getenv("DEEPSEEK_API_KEY", "sk-7731fa779b8a46fda7e9e48c46bce715")
         self.saved_deepseek_model = "deepseek-v4-flash"
         self.saved_font_size = "18"
-        self.saved_sub_preset = "capcut_default"
+        self.saved_margin_v = "45"
+        self.saved_alignment = "2"
+        self.saved_sub_preset = "badge_white_on_black"
         if CONFIG_FILE.exists():
             try:
                 data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
@@ -83,7 +85,9 @@ class DouyinEditorApp(ctk.CTk):
                 self.saved_cookie_file = data.get("douyin_cookie_file", "")
                 self.saved_browser_name = data.get("douyin_browser_name", "Edge")
                 self.saved_font_size = data.get("subtitle_font_size", "18")
-                self.saved_sub_preset = data.get("subtitle_preset_id", "capcut_default")
+                self.saved_margin_v = data.get("subtitle_margin_v", "45")
+                self.saved_alignment = data.get("subtitle_alignment", "2")
+                self.saved_sub_preset = data.get("subtitle_preset_id", "badge_white_on_black")
             except Exception:
                 pass
 
@@ -101,7 +105,9 @@ class DouyinEditorApp(ctk.CTk):
                 "douyin_cookie_file": getattr(self, "selected_cookie_file_path", ""),
                 "douyin_browser_name": self.cmb_browser.get() if hasattr(self, "cmb_browser") else "Edge",
                 "subtitle_font_size": self.cmb_font_size.get() if hasattr(self, "cmb_font_size") else "18",
-                "subtitle_preset_id": getattr(self, "selected_sub_preset_id", "capcut_default"),
+                "subtitle_margin_v": str(int(self.slider_margin_v.get())) if hasattr(self, "slider_margin_v") else "45",
+                "subtitle_alignment": str(self._get_alignment_code()) if hasattr(self, "seg_alignment") else "2",
+                "subtitle_preset_id": getattr(self, "selected_sub_preset_id", "badge_white_on_black"),
             }
             CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
@@ -539,10 +545,10 @@ class DouyinEditorApp(ctk.CTk):
         ctk.CTkLabel(sub_row, text="Font chữ:").grid(row=0, column=0, sticky="w")
         self.cmb_font = ctk.CTkComboBox(
             sub_row,
-            values=["Arial", "Montserrat", "Roboto", "Tahoma", "Verdana", "Segoe UI"],
+            values=["Georgia", "Times New Roman", "Cambria", "Arial", "Montserrat", "Roboto", "Tahoma", "Verdana", "Segoe UI"],
             command=lambda _: self._update_sub_preview_banner()
         )
-        self.cmb_font.set("Arial")
+        self.cmb_font.set(getattr(self.current_subtitle_style, "font_name", "Georgia"))
         self.cmb_font.grid(row=1, column=0, sticky="ew", padx=(0, 6))
 
         ctk.CTkLabel(sub_row, text="Cỡ chữ (Size):").grid(row=0, column=1, sticky="w")
@@ -554,32 +560,88 @@ class DouyinEditorApp(ctk.CTk):
         self.cmb_font_size.set(getattr(self, "saved_font_size", "18"))
         self.cmb_font_size.grid(row=1, column=1, sticky="ew", padx=(6, 0))
 
-        # Vị trí mép dưới (Margin V) & In đậm
-        margin_row = ctk.CTkFrame(sub_card, fg_color="transparent")
-        margin_row.pack(fill="x", padx=12, pady=(4, 6))
-        margin_row.grid_columnconfigure((0, 1), weight=1)
+        # Vùng Cấu hình Vị trí Hiển thị Phụ đề (Alignment & Margin V)
+        pos_card = ctk.CTkFrame(sub_card, fg_color="#18181b", corner_radius=6, border_width=1, border_color="#27272a")
+        pos_card.pack(fill="x", padx=12, pady=(4, 6))
 
-        pos_header = ctk.CTkFrame(margin_row, fg_color="transparent")
-        pos_header.grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        ctk.CTkLabel(pos_header, text="Vị trí mép dưới:").pack(side="left")
-        self.lbl_margin_v = ctk.CTkLabel(pos_header, text="35px", text_color="#38bdf8")
+        # 1. Căn lề dọc / vị trí tổng quan
+        align_row = ctk.CTkFrame(pos_card, fg_color="transparent")
+        align_row.pack(fill="x", padx=8, pady=(6, 2))
+        ctk.CTkLabel(align_row, text="📐 Căn lề:", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=(0, 6))
+
+        self.seg_alignment = ctk.CTkSegmentedButton(
+            align_row,
+            values=["⬇️ Dưới cùng (Mặc định)", "⏸️ Giữa màn hình", "⬆️ Trên cùng"],
+            command=self._on_alignment_changed,
+            selected_color="#2563eb",
+            selected_hover_color="#1d4ed8"
+        )
+        self.seg_alignment.pack(side="left", fill="x", expand=True)
+        if getattr(self, "saved_alignment", "2") == "5":
+            self.seg_alignment.set("⏸️ Giữa màn hình")
+        elif getattr(self, "saved_alignment", "2") == "8":
+            self.seg_alignment.set("⬆️ Trên cùng")
+        else:
+            self.seg_alignment.set("⬇️ Dưới cùng (Mặc định)")
+
+        # 2. Thanh kéo khoảng cách mép (Margin V)
+        margin_header = ctk.CTkFrame(pos_card, fg_color="transparent")
+        margin_header.pack(fill="x", padx=8, pady=(4, 0))
+        self.lbl_margin_title = ctk.CTkLabel(margin_header, text="📏 Vị trí độ cao / Khoảng cách mép:", font=ctk.CTkFont(size=12))
+        self.lbl_margin_title.pack(side="left")
+        
+        saved_m_v = int(getattr(self, "saved_margin_v", 45))
+        self.lbl_margin_v = ctk.CTkLabel(margin_header, text=f"{saved_m_v}px", font=ctk.CTkFont(weight="bold"), text_color="#38bdf8")
         self.lbl_margin_v.pack(side="right")
 
         self.slider_margin_v = ctk.CTkSlider(
-            margin_row, from_=15, to=85, number_of_steps=14,
-            command=lambda v: self.lbl_margin_v.configure(text=f"{int(v)}px")
+            pos_card, from_=10, to=600, number_of_steps=118,
+            command=self._on_margin_v_changed
         )
-        self.slider_margin_v.set(35)
-        self.slider_margin_v.grid(row=1, column=0, sticky="ew", padx=(0, 6))
+        self.slider_margin_v.set(saved_m_v)
+        self.slider_margin_v.pack(fill="x", padx=8, pady=(2, 4))
 
+        # 3. Các mốc chọn nhanh vị trí (Quick Presets)
+        quick_row = ctk.CTkFrame(pos_card, fg_color="transparent")
+        quick_row.pack(fill="x", padx=8, pady=(0, 6))
+        quick_row.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
+
+        btn_q1 = ctk.CTkButton(quick_row, text="Sát đáy (35px)", height=24, font=ctk.CTkFont(size=11), fg_color="#27272a", hover_color="#3f3f46", command=lambda: self._set_quick_margin(35))
+        btn_q1.grid(row=0, column=0, padx=2, sticky="ew")
+
+        btn_q2 = ctk.CTkButton(quick_row, text="Chuẩn (70px)", height=24, font=ctk.CTkFont(size=11), fg_color="#27272a", hover_color="#3f3f46", command=lambda: self._set_quick_margin(70))
+        btn_q2.grid(row=0, column=1, padx=2, sticky="ew")
+
+        btn_q3 = ctk.CTkButton(quick_row, text="Giữa dưới (160px)", height=24, font=ctk.CTkFont(size=11), fg_color="#27272a", hover_color="#3f3f46", command=lambda: self._set_quick_margin(160))
+        btn_q3.grid(row=0, column=2, padx=2, sticky="ew")
+
+        btn_q4 = ctk.CTkButton(quick_row, text="Cao (300px)", height=24, font=ctk.CTkFont(size=11), fg_color="#27272a", hover_color="#3f3f46", command=lambda: self._set_quick_margin(300))
+        btn_q4.grid(row=0, column=3, padx=2, sticky="ew")
+
+        btn_q_snap = ctk.CTkButton(quick_row, text="🎯 Khớp vùng mờ", height=24, font=ctk.CTkFont(size=11, weight="bold"), fg_color="#059669", hover_color="#047857", command=self._snap_subtitle_to_blur_region)
+        btn_q_snap.grid(row=0, column=4, padx=2, sticky="ew")
+
+        # Tùy chọn in đậm chữ & Tự động khớp vùng làm mờ
+        opt_row = ctk.CTkFrame(sub_card, fg_color="transparent")
+        opt_row.pack(fill="x", padx=12, pady=(2, 4))
         self.chk_bold_sub = ctk.CTkCheckBox(
-            margin_row,
+            opt_row,
             text="In đậm chữ (Bold)",
             font=ctk.CTkFont(size=12),
             command=self._update_sub_preview_banner
         )
         self.chk_bold_sub.select()
-        self.chk_bold_sub.grid(row=1, column=1, sticky="w", padx=(6, 0))
+        self.chk_bold_sub.pack(side="left", padx=(0, 15))
+
+        self.chk_auto_snap_sub = ctk.CTkCheckBox(
+            opt_row,
+            text="🎯 Tự động đè phụ đề vào giữa vùng làm mờ",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#38bdf8",
+            command=self._on_auto_snap_toggled
+        )
+        self.chk_auto_snap_sub.select()
+        self.chk_auto_snap_sub.pack(side="left")
 
         # Live Subtitle Preview Banner
         self.preview_sub_frame = ctk.CTkFrame(sub_card, corner_radius=6, border_width=1, border_color="#3f3f46", fg_color="#18181b")
@@ -702,6 +764,9 @@ class DouyinEditorApp(ctk.CTk):
             state="disabled"
         )
         self.btn_play_video.grid(row=0, column=2, sticky="ew", padx=(8, 12), pady=10)
+
+        # Cập nhật banner xem trước phụ đề ban đầu
+        self._update_sub_preview_banner()
 
     # -----------------------------------------------------------------
     # UI HANDLERS & LOGIC
@@ -881,21 +946,60 @@ class DouyinEditorApp(ctk.CTk):
         self.current_blur_region.y = None
         self.current_blur_region.width = None
         self.current_blur_region.height = None
+        if getattr(self, "chk_auto_snap_sub", None) and self.chk_auto_snap_sub.get():
+            self._snap_subtitle_to_blur_region()
 
     def _open_visual_roi_selector(self, video_file: Optional[Path] = None):
-        """Mở cửa sổ đồ họa cho phép người dùng kéo chuột khoanh vùng mờ"""
-        def on_saved(region: BlurRegion):
+        """Mở cửa sổ Studio đồ họa cho phép người dùng kéo chuột khoanh vùng mờ & chỉnh tay phụ đề"""
+        def on_saved(region: BlurRegion, sub_style: Optional[SubtitleStyle] = None):
             self.current_blur_region = region
             self.slider_blur_y.set(region.y_ratio)
             self.slider_blur_h.set(region.height_ratio)
             self.lbl_blur_y_title.configure(text=f"Vị trí mờ (Y): {region.y_ratio*100:.0f}%")
             self.lbl_blur_h_title.configure(text=f"Độ cao mờ (H): {region.height_ratio*100:.0f}%")
+
+            if sub_style:
+                self.current_subtitle_style = copy.copy(sub_style)
+                if hasattr(self, "slider_margin_v"):
+                    self.slider_margin_v.set(sub_style.margin_v)
+                if hasattr(self, "lbl_margin_v"):
+                    self.lbl_margin_v.configure(text=f"{sub_style.margin_v}px")
+                if hasattr(self, "cmb_font"):
+                    self.cmb_font.set(sub_style.font_name)
+                if hasattr(self, "cmb_font_size"):
+                    self.cmb_font_size.set(str(sub_style.font_size))
+                if hasattr(self, "seg_alignment"):
+                    if sub_style.alignment == 5:
+                        self.seg_alignment.set("⏸️ Giữa màn hình")
+                    elif sub_style.alignment == 8:
+                        self.seg_alignment.set("⬆️ Trên cùng")
+                    else:
+                        self.seg_alignment.set("⬇️ Dưới cùng (Mặc định)")
+                if hasattr(self, "chk_auto_snap_sub"):
+                    if getattr(sub_style, "snap_to_blur", True):
+                        self.chk_auto_snap_sub.select()
+                    else:
+                        self.chk_auto_snap_sub.deselect()
+                if hasattr(self, "selected_sub_preset_id") and getattr(sub_style, "preset_id", None):
+                    self.selected_sub_preset_id = sub_style.preset_id
+                    for pid, btn in self.sub_preset_buttons.items():
+                        if pid == self.selected_sub_preset_id:
+                            btn.configure(border_color="#06b6d4", border_width=3)
+                        else:
+                            orig_bc = SUBTITLE_PRESETS.get(pid, {}).get("border_color", "transparent")
+                            btn.configure(border_color=orig_bc if orig_bc != "transparent" else "#3f3f46", border_width=2)
+                self._update_sub_preview_banner()
+
             self._append_log(f"Đã cập nhật vùng mờ: Y={region.y_ratio*100:.1f}%, H={region.height_ratio*100:.1f}% (Pixel: X={region.x}, Y={region.y}, W={region.width}, H={region.height})", "CONFIG")
+            if sub_style:
+                mode_str = "Tự động căn giữa vùng mờ" if getattr(sub_style, "snap_to_blur", True) else f"Chỉnh tay độc lập (Margin V={sub_style.margin_v}px)"
+                self._append_log(f"🎯 Phụ đề Tiếng Việt: {sub_style.name} ({mode_str})", "CONFIG")
 
         dlg = VisualROISelectorDialog(
             parent=self,
             video_path=video_file,
             initial_blur_region=self.current_blur_region,
+            initial_subtitle_style=self.current_subtitle_style,
             on_save_callback=on_saved
         )
         return dlg
@@ -909,12 +1013,16 @@ class DouyinEditorApp(ctk.CTk):
 
         # Cập nhật style hiện tại
         self.current_subtitle_style = copy.copy(p_info["style"])
+        if hasattr(self, "cmb_font") and getattr(p_info["style"], "font_name", None):
+            self.cmb_font.set(p_info["style"].font_name)
         if hasattr(self, "cmb_font"):
             self.current_subtitle_style.font_name = self.cmb_font.get()
         if hasattr(self, "cmb_font_size"):
             self.current_subtitle_style.font_size = int(self.cmb_font_size.get())
         if hasattr(self, "slider_margin_v"):
             self.current_subtitle_style.margin_v = int(self.slider_margin_v.get())
+        if hasattr(self, "seg_alignment"):
+            self.current_subtitle_style.alignment = self._get_alignment_code()
         if hasattr(self, "chk_bold_sub"):
             self.current_subtitle_style.bold = 1 if self.chk_bold_sub.get() else 0
 
@@ -929,15 +1037,74 @@ class DouyinEditorApp(ctk.CTk):
         self.lbl_selected_sub_preset.configure(text=f"Kiểu đang chọn: 🔥 {p_info['name']}")
         self._update_sub_preview_banner()
 
+    def _snap_subtitle_to_blur_region(self):
+        """Tự động tính toán khoảng cách mép (Margin V) để phụ đề nằm đúng tâm vùng làm mờ"""
+        b = self.current_blur_region
+        ref_h = 720
+        if b.height is not None and b.y is not None and b.height_ratio > 0:
+            ref_h = int(b.height / b.height_ratio)
+        elif b.y is not None and b.y_ratio > 0:
+            ref_h = int(b.y / b.y_ratio)
+
+        by = b.y if b.y is not None else int(ref_h * b.y_ratio)
+        bh = b.height if b.height is not None else int(ref_h * b.height_ratio)
+        font_sz = int(self.cmb_font_size.get()) if hasattr(self, "cmb_font_size") else 18
+
+        # Margin V từ mép dưới lên tâm hộp mờ
+        calc_margin = int(ref_h - (by + bh) + max(0, (bh - font_sz) / 2))
+        calc_margin = max(10, min(calc_margin, 600))
+
+        self._set_quick_margin(calc_margin)
+        if hasattr(self, "seg_alignment"):
+            self.seg_alignment.set("⬇️ Dưới cùng (Mặc định)")
+            if hasattr(self, "current_subtitle_style"):
+                self.current_subtitle_style.alignment = 2
+
+    def _on_auto_snap_toggled(self):
+        if hasattr(self, "chk_auto_snap_sub") and self.chk_auto_snap_sub.get():
+            self._snap_subtitle_to_blur_region()
+
+    def _on_margin_v_changed(self, val: float):
+        px = int(val)
+        self.lbl_margin_v.configure(text=f"{px}px")
+        if hasattr(self, "current_subtitle_style"):
+            self.current_subtitle_style.margin_v = px
+        self._update_sub_preview_banner()
+
+    def _set_quick_margin(self, px: int):
+        if hasattr(self, "slider_margin_v"):
+            self.slider_margin_v.set(px)
+        if hasattr(self, "lbl_margin_v"):
+            self.lbl_margin_v.configure(text=f"{px}px")
+        if hasattr(self, "current_subtitle_style"):
+            self.current_subtitle_style.margin_v = px
+        self._update_sub_preview_banner()
+
+    def _on_alignment_changed(self, _choice: str):
+        align_code = self._get_alignment_code()
+        if hasattr(self, "current_subtitle_style"):
+            self.current_subtitle_style.alignment = align_code
+        self._update_sub_preview_banner()
+
+    def _get_alignment_code(self) -> int:
+        if not hasattr(self, "seg_alignment"):
+            return 2
+        val = self.seg_alignment.get()
+        if "Giữa" in val or "Trung" in val:
+            return 5
+        elif "Trên" in val or "Đỉnh" in val:
+            return 8
+        return 2
+
     def _update_sub_preview_banner(self):
         """Cập nhật banner xem trước phụ đề theo thời gian thực (Live Preview)"""
         if not hasattr(self, "lbl_preview_sub_text") or not hasattr(self, "preview_sub_frame"):
             return
-        pid = getattr(self, "selected_sub_preset_id", "capcut_default")
-        p_info = SUBTITLE_PRESETS.get(pid, SUBTITLE_PRESETS["capcut_default"])
+        pid = getattr(self, "selected_sub_preset_id", "badge_white_on_black")
+        p_info = SUBTITLE_PRESETS.get(pid, SUBTITLE_PRESETS["badge_white_on_black"])
 
-        font_name = self.cmb_font.get() if hasattr(self, "cmb_font") else "Arial"
-        font_size = int(self.cmb_font_size.get()) if hasattr(self, "cmb_font_size") else 22
+        font_name = self.cmb_font.get() if hasattr(self, "cmb_font") else "Georgia"
+        font_size = int(self.cmb_font_size.get()) if hasattr(self, "cmb_font_size") else 18
         is_bold = "bold" if (hasattr(self, "chk_bold_sub") and self.chk_bold_sub.get()) else "normal"
 
         is_badge = (p_info["style"].border_style == 3)
@@ -1039,12 +1206,15 @@ class DouyinEditorApp(ctk.CTk):
 
         self.current_blur_region.enabled = blur_enabled
 
-        # Xây dựng SubtitleStyle hoàn chỉnh từ mẫu đang chọn và font/size/margin
-        sub_style = copy.copy(getattr(self, "current_subtitle_style", SUBTITLE_PRESETS["capcut_default"]["style"]))
+        # Xây dựng SubtitleStyle hoàn chỉnh từ mẫu đang chọn và font/size/margin/alignment
+        sub_style = copy.copy(getattr(self, "current_subtitle_style", SUBTITLE_PRESETS["badge_white_on_black"]["style"]))
         sub_style.font_name = font_name
         sub_style.font_size = font_size
         if hasattr(self, "slider_margin_v"):
             sub_style.margin_v = int(self.slider_margin_v.get())
+        sub_style.alignment = self._get_alignment_code()
+        if hasattr(self, "chk_auto_snap_sub"):
+            sub_style.snap_to_blur = bool(self.chk_auto_snap_sub.get())
         if hasattr(self, "chk_bold_sub"):
             sub_style.bold = 1 if self.chk_bold_sub.get() else 0
 
@@ -1100,32 +1270,53 @@ class DouyinEditorApp(ctk.CTk):
 
         self._append_log("Bắt đầu khởi chạy quy trình tự động hóa...", "START")
 
-        def interactive_roi_hook(raw_video_path: Path, current_region: BlurRegion) -> BlurRegion:
-            """Hàm hook chặn luồng xử lý để mở UI chọn vùng mờ trên video vừa tải"""
+        def interactive_roi_hook(raw_video_path: Path, current_region: BlurRegion, current_sub_style: Optional[SubtitleStyle] = None) -> Tuple[BlurRegion, Optional[SubtitleStyle]]:
+            """Hàm hook chặn luồng xử lý để mở Studio chọn vùng mờ & chỉnh tay phụ đề trên video vừa tải"""
             event = threading.Event()
-            chosen_container = {"region": current_region}
+            chosen_container = {
+                "region": current_region,
+                "sub_style": current_sub_style or self.current_subtitle_style
+            }
 
             def open_dialog():
-                def on_save(r: BlurRegion):
+                def on_save(r: BlurRegion, s: Optional[SubtitleStyle] = None):
                     chosen_container["region"] = r
                     self.current_blur_region = r
                     self.slider_blur_y.set(r.y_ratio)
                     self.slider_blur_h.set(r.height_ratio)
+
+                    if s:
+                        chosen_container["sub_style"] = s
+                        self.current_subtitle_style = copy.copy(s)
+                        if hasattr(self, "slider_margin_v"):
+                            self.slider_margin_v.set(s.margin_v)
+                        if hasattr(self, "lbl_margin_v"):
+                            self.lbl_margin_v.configure(text=f"{s.margin_v}px")
+                        if hasattr(self, "cmb_font_size"):
+                            self.cmb_font_size.set(str(s.font_size))
+                        if hasattr(self, "cmb_font"):
+                            self.cmb_font.set(s.font_name)
+                        self._update_sub_preview_banner()
+
                     self._append_log(f"Đã chọn vùng mờ: Pixel X={r.x}, Y={r.y}, W={r.width}, H={r.height} ({r.y_ratio*100:.1f}%)", "ROI")
+                    if s:
+                        mode_str = "Tự động căn giữa" if getattr(s, "snap_to_blur", True) else f"Chỉnh tay (Margin V={s.margin_v}px)"
+                        self._append_log(f"🎯 Phụ đề Tiếng Việt: {s.name} ({mode_str})", "ROI")
                     event.set()
 
                 dlg = VisualROISelectorDialog(
                     parent=self,
                     video_path=raw_video_path,
                     initial_blur_region=current_region,
+                    initial_subtitle_style=current_sub_style or self.current_subtitle_style,
                     on_save_callback=on_save
                 )
-                # Nếu người dùng đóng cửa sổ mà không bấm Lưu -> dùng vùng hiện tại
+                # Nếu người dùng đóng cửa sổ mà không bấm Lưu -> dùng cấu hình hiện tại
                 dlg.protocol("WM_DELETE_WINDOW", lambda: (event.set(), dlg.destroy()))
 
             self.after(0, open_dialog)
             event.wait()
-            return chosen_container["region"]
+            return chosen_container["region"], chosen_container["sub_style"]
 
         def worker():
             try:

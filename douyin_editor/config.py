@@ -39,19 +39,20 @@ class SubtitleStyle:
     Cấu hình hiển thị phụ đề tiếng Việt khi Hardcode (Burn-in) vào video.
     Màu sắc theo định dạng ASS (&H<Alpha><Blue><Green><Red> hoặc Hex).
     """
-    preset_id: str = "capcut_default"
-    name: str = "Trắng viền đen (CapCut)"
-    font_name: str = "Arial"
+    preset_id: str = "badge_white_on_black"
+    name: str = "Chữ trắng hộp đen (Georgia Serif)"
+    font_name: str = "Georgia"
     font_size: int = 18
     primary_color: str = "&H00FFFFFF"    # Chữ trắng (ABGR)
     outline_color: str = "&H00000000"    # Viền đen
-    back_color: str = "&H80000000"       # Nền bóng mờ (50% opacity)
-    outline_width: float = 2.5           # Độ dày viền chữ
-    shadow: float = 1.2                  # Đổ bóng
-    margin_v: int = 35                   # Khoảng cách từ mép dưới màn hình (pixel)
+    back_color: str = "&H00000000"       # Hộp đen (100% opacity)
+    outline_width: float = 4.5           # Độ dày hộp badge
+    shadow: float = 0                    # Đổ bóng
+    margin_v: int = 45                   # Khoảng cách từ mép dưới màn hình (pixel)
     bold: int = 1                        # In đậm (1 = True, 0 = False)
     alignment: int = 2                   # Căn giữa dưới cùng (ASS standard = 2)
-    border_style: int = 1                # 1 = Viền & Đổ bóng, 3 = Hộp chữ nhật (Badge)
+    border_style: int = 3                # 1 = Viền & Đổ bóng, 3 = Hộp chữ nhật (Badge)
+    snap_to_blur: bool = True            # Tự động căn chỉnh phụ đề khớp chính giữa vùng làm mờ
 
 
 SUBTITLE_PRESETS = {
@@ -229,19 +230,22 @@ SUBTITLE_PRESETS = {
     },
     "badge_white_on_black": {
         "id": "badge_white_on_black",
-        "name": "Chữ trắng nền hộp đen (Badge)",
+        "name": "Chữ trắng hộp đen (Georgia Serif)",
         "preview_text": "Aa",
         "fg_color": "#ffffff",
         "bg_color": "#000000",
-        "border_color": "#374151",
+        "border_color": "#e5e7eb",
         "style": SubtitleStyle(
             preset_id="badge_white_on_black",
-            name="Chữ trắng nền hộp đen (Badge)",
+            name="Chữ trắng hộp đen (Georgia Serif)",
+            font_name="Georgia",
+            font_size=18,
             primary_color="&H00FFFFFF",  # Trắng
             outline_color="&H00000000",
             back_color="&H00000000",     # Hộp đen
-            outline_width=4.0,
+            outline_width=4.5,
             shadow=0,
+            bold=1,
             border_style=3
         )
     },

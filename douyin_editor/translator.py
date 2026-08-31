@@ -40,7 +40,7 @@ def build_translation_system_instruction(config: PipelineConfig) -> str:
         "2. GIỮ NGUYÊN TUYỆT ĐỐI timeline mốc thời gian dạng '00:00:00,000 --> 00:00:00,000'.\n"
         "3. Không thêm bớt câu, không gộp câu, không xóa timeline.\n"
         "4. DỊCH TRỌN VẸN HẾT CÂU: Mỗi câu dịch phải là một câu nói hoàn chỉnh, liền mạch, có đầy đủ ý nghĩa và kết thúc bằng dấu câu phù hợp (!, ?, .). Tuyệt đối không dịch dở dang, không ngắt cụt lủn để giọng đọc AI lồng tiếng được trọn vẹn, truyền cảm và hay nhất.\n"
-        "5. Câu dịch tiếng Việt cần tự nhiên, giàu cảm xúc, đúng ngữ cảnh chủ đề, độ dài vừa phải (khoảng 6-12 từ) để giọng đọc AI đọc kịp nhịp video.\n"
+        "5. Câu dịch tiếng Việt cần tự nhiên, giàu cảm xúc, đúng ngữ cảnh chủ đề, độ dài vừa phải để giọng đọc AI đọc kịp nhịp video.\n"
         "6. CHỈ TRẢ VỀ DUY NHẤT nội dung file SRT hoàn chỉnh. Không thêm lời chào, không kèm giải thích, không bọc trong thẻ markdown ```."
     )
 

@@ -68,9 +68,19 @@ class VideoCompositor:
         output_srt.write_text(scaled_content, encoding="utf-8")
         return output_srt
 
-    def build_force_style_string(self) -> str:
+    def build_force_style_string(self, video_width: int = 1280, video_height: int = 720) -> str:
         s = self.config.subtitle_style
+        margin_v = s.margin_v
+
+        # Tự động căn chỉnh chính xác phụ đề lọt vào giữa vùng làm mờ nếu vùng mờ đang bật
+        if getattr(s, "snap_to_blur", True) and self.config.blur_region.enabled:
+            _, by, _, bh = self.calculate_blur_box(video_width, video_height)
+            margin_v = int(video_height - (by + bh) + max(0, (bh - s.font_size) / 2))
+            margin_v = max(10, min(margin_v, video_height - 20))
+
         style_parts = [
+            f"PlayResX={video_width}",
+            f"PlayResY={video_height}",
             f"FontName={s.font_name}",
             f"FontSize={s.font_size}",
             f"PrimaryColour={s.primary_color}",
@@ -79,7 +89,7 @@ class VideoCompositor:
             f"Bold={s.bold}",
             f"Outline={s.outline_width}",
             f"Shadow={s.shadow}",
-            f"MarginV={s.margin_v}",
+            f"MarginV={margin_v}",
             f"Alignment={s.alignment}",
             f"BorderStyle={getattr(s, 'border_style', 1)}"
         ]
@@ -157,14 +167,14 @@ class VideoCompositor:
             v_filter_parts.append(f"[v_crop]crop={w}:{h}:{x}:{y},boxblur={safe_power}:5[v_blurred];")
             if has_subtitles:
                 escaped_srt = self._escape_ffmpeg_path(burn_srt_file)
-                force_style = self.build_force_style_string()
+                force_style = self.build_force_style_string(video_width, video_height)
                 v_filter_parts.append(f"[v_speed][v_blurred]overlay={x}:{y},subtitles='{escaped_srt}':force_style='{force_style}'[v_out]")
             else:
                 v_filter_parts.append(f"[v_speed][v_blurred]overlay={x}:{y}[v_out]")
         else:
             if has_subtitles:
                 escaped_srt = self._escape_ffmpeg_path(burn_srt_file)
-                force_style = self.build_force_style_string()
+                force_style = self.build_force_style_string(video_width, video_height)
                 v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS,format=yuv420p,subtitles='{escaped_srt}':force_style='{force_style}'[v_out]")
             else:
                 v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS,format=yuv420p[v_out]")

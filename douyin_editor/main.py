@@ -39,8 +39,6 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--topic", type=str, default="minecraft_kids", choices=["minecraft_kids", "gaming_general", "comedy_entertainment", "general"], help="Chu de dich thuat (mac dinh: minecraft_kids).")
     parser.add_argument("-k", "--deepseek-key", type=str, default=os.getenv("DEEPSEEK_API_KEY", "sk-7731fa779b8a46fda7e9e48c46bce715"), help="API Key DeepSeek.")
     parser.add_argument("-m", "--deepseek-model", type=str, default="deepseek-v4-flash", help="Model DeepSeek (mac dinh: deepseek-v4-flash).")
-    parser.add_argument("--gemini-key", type=str, default=os.getenv("GEMINI_API_KEY", ""), help="API Key Google Gemini.")
-    parser.add_argument("--gemini-model", type=str, default="gemini-3.6-flash", help="Model Google Gemini (mac dinh: gemini-3.6-flash).")
     parser.add_argument("--gui", action="store_true", help="Khoi chay giao dien do hoa (GUI).")
     parser.add_argument("--cookie-str", type=str, help="Chuoi cookie Douyin.")
     parser.add_argument("--cookie-file", type=str, help="Duong dan file cookies.txt.")
@@ -58,12 +56,14 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--sub-style",
         type=str,
-        default="capcut_default",
+        default="badge_white_on_black",
         choices=["none", "capcut_default", "white_thick_black", "white_soft_shadow", "tiktok_yellow_black", "red_white_outline", "orange_white_outline", "blue_white_outline", "green_black_outline", "badge_black_on_white", "badge_white_on_black", "badge_black_on_yellow", "badge_white_on_purple", "cyan_neon_outline", "glitch_3d_shadow", "neon_glow_pink", "neon_glow_yellow", "neon_glow_green"],
-        help="Mau chu phu de CapCut (capcut_default, tiktok_yellow_black, badge_black_on_yellow, neon_glow_pink, ...)."
+        help="Mau chu phu de CapCut (badge_white_on_black, capcut_default, tiktok_yellow_black, badge_black_on_yellow, neon_glow_pink, ...)."
     )
-    parser.add_argument("--font-size", type=int, default=22, help="Kich thuoc chu phu de.")
-    parser.add_argument("--font-name", type=str, default="Arial", help="Ten font chu.")
+    parser.add_argument("--font-size", type=int, default=18, help="Kich thuoc chu phu de.")
+    parser.add_argument("--font-name", type=str, default="Georgia", help="Ten font chu.")
+    parser.add_argument("--margin-v", type=int, default=45, help="Khoang cach phu de tu mep duoi (pixel, mac dinh: 45).")
+    parser.add_argument("--alignment", type=int, default=2, choices=[1, 2, 3, 4, 5, 6, 7, 8, 9], help="Vi tri can le phu de ASS (2 = Bottom-Center, 5 = Mid-Center, 8 = Top-Center).")
     parser.add_argument("--no-bgm", action="store_true", help="Tat nhac nen (chi giu lai giong doc TTS).")
     parser.add_argument("--bgm-volume", type=float, default=1.0, help="Am luong nhac nen BGM goc (mac dinh: 1.0 = 100%%).")
     parser.add_argument("--separation-speed", type=str, default="turbo", choices=["turbo", "fast", "balanced", "hq"], help="Toc do tach AI MDX-Net (mac dinh: turbo).")
@@ -123,10 +123,12 @@ def main():
 
     import copy
     from config import SUBTITLE_PRESETS
-    sub_preset = SUBTITLE_PRESETS.get(args.sub_style, SUBTITLE_PRESETS["capcut_default"])
+    sub_preset = SUBTITLE_PRESETS.get(args.sub_style, SUBTITLE_PRESETS["badge_white_on_black"])
     sub_style = copy.copy(sub_preset["style"])
     sub_style.font_name = args.font_name
     sub_style.font_size = args.font_size
+    sub_style.margin_v = args.margin_v
+    sub_style.alignment = args.alignment
 
     config = PipelineConfig(
         llm_provider="deepseek",

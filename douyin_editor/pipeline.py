@@ -81,12 +81,12 @@ class DouyinAutoPipeline:
         douyin_url_or_text: str,
         custom_name: Optional[str] = None,
         progress_callback: Optional[Callable[[int, int, str, str], None]] = None,
-        interactive_roi_callback: Optional[Callable[[Path, BlurRegion], Optional[BlurRegion]]] = None
+        interactive_roi_callback: Optional[Callable[[Path, BlurRegion, Optional[SubtitleStyle]], Tuple[BlurRegion, Optional[SubtitleStyle]]]] = None
     ) -> Path:
         """
         Kích hoạt toàn bộ quy trình tự động.
         :param progress_callback: Hàm nhận (current_step, total_steps, step_name, log_message)
-        :param interactive_roi_callback: Hàm mở UI cho người dùng khoanh vùng mờ trên video vừa tải
+        :param interactive_roi_callback: Hàm mở Studio cho người dùng khoanh vùng mờ & chỉnh tay phụ đề trên video vừa tải
         """
         start_time = time.time()
         self.print_pipeline_banner(douyin_url_or_text)
@@ -113,13 +113,21 @@ class DouyinAutoPipeline:
             video_id = raw_video.stem
             overall_pbar.update(1)
 
-            # Người dùng tự chọn vùng làm mờ phụ đề trên video vừa tải (nếu bật)
+            # Người dùng tự chọn vùng làm mờ và chỉnh tay phụ đề trên video vừa tải (nếu bật)
             if interactive_roi_callback:
-                notify(2, "Bước 2: Chọn vùng làm mờ", "Vui lòng khoanh vùng phụ đề trên cửa sổ xem trước...")
-                chosen_region = interactive_roi_callback(raw_video, self.config.blur_region)
-                if chosen_region:
-                    self.config.blur_region = chosen_region
-                    self.preprocessor.blur_config = chosen_region
+                notify(2, "Bước 2: Chỉnh sửa trực quan", "Vui lòng khoanh vùng làm mờ & chỉnh vị trí phụ đề trên cửa sổ xem trước...")
+                chosen_res = interactive_roi_callback(raw_video, self.config.blur_region, self.config.subtitle_style)
+                if isinstance(chosen_res, tuple) and len(chosen_res) == 2:
+                    chosen_region, chosen_style = chosen_res
+                    if chosen_region:
+                        self.config.blur_region = chosen_region
+                        self.preprocessor.blur_config = chosen_region
+                    if chosen_style:
+                        self.config.subtitle_style = chosen_style
+                        self.burner.style = chosen_style
+                elif chosen_res:
+                    self.config.blur_region = chosen_res
+                    self.preprocessor.blur_config = chosen_res
 
             # Thư mục tạm riêng cho từng video
             session_work_dir = self.config.work_dir / video_id
