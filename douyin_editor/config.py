@@ -546,6 +546,7 @@ class PipelineConfig:
     # Video Processing
     speed_factor: float = 0.70           # Tốc độ làm chậm để AI dịch & đọc tiếng Việt khớp timeline
     final_speed: float = 1.20            # Tốc độ tăng tốc khi render video thành phẩm ở Bước 8 (mặc định 1.2x)
+    export_resolution: str = "1080p"     # Độ phân giải xuất: "1080p" (Full HD), "original" (gốc), "720p" (HD), "2k" (2K QHD)
     video_crf: int = 18
     video_preset: str = "ultrafast"
     

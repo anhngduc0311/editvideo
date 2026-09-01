@@ -185,12 +185,39 @@ class DouyinDownloader:
                 res_data = resp.json()
                 detail = res_data.get("aweme_detail") or {}
                 video_obj = detail.get("video") or {}
-                url_list = video_obj.get("play_addr", {}).get("url_list", []) or []
                 
-                if url_list:
-                    stream_url = url_list[0].replace("playwm", "play")
+                # Quét và xếp hạng toàn bộ các luồng video để chọn luồng chất lượng Full HD / Bitrate cao nhất
+                candidates = []
+                
+                # 1. Quét danh sách bit_rate (chứa các profile 1080p, 720p, 540p kèm bitrate chi tiết)
+                for b in video_obj.get("bit_rate", []):
+                    pa = b.get("play_addr") or {}
+                    urls = pa.get("url_list") or []
+                    if urls:
+                        w = pa.get("width") or b.get("width") or 0
+                        h = pa.get("height") or b.get("height") or 0
+                        br = b.get("bit_rate") or 0
+                        gear = b.get("gear_name") or ""
+                        candidates.append((w * h, br, urls[0].replace("playwm", "play"), f"{w}x{h} ({gear}, {br//1000}kbps)"))
+                
+                # 2. Quét các trường địa chỉ phụ khác
+                for key in ["play_addr_265", "play_addr_h264", "download_addr", "play_addr"]:
+                    addr = video_obj.get(key) or {}
+                    urls = addr.get("url_list") or []
+                    if urls:
+                        w = addr.get("width") or 0
+                        h = addr.get("height") or 0
+                        candidates.append((w * h, 0, urls[0].replace("playwm", "play"), f"{w}x{h} ({key})"))
+                
+                # Sắp xếp ưu tiên: Kích thước pixel (w*h) lớn nhất -> Bitrate cao nhất
+                candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+                
+                if candidates:
+                    best_candidate = candidates[0]
+                    stream_url = best_candidate[2]
+                    quality_info = best_candidate[3]
                     title = detail.get("desc", f"douyin_{video_id}")
-                    logger.info(f"Tìm thấy luồng video Douyin HD: {title[:40]}...")
+                    logger.info(f"Tìm thấy luồng video Douyin chất lượng cao nhất [{quality_info}]: {title[:40]}...")
                     
                     stream_headers = {
                         "User-Agent": self.headers["User-Agent"],
@@ -205,7 +232,7 @@ class DouyinDownloader:
                             total=total_size,
                             unit="B",
                             unit_scale=True,
-                            desc="[Bước 1] Đang tải Douyin HD",
+                            desc=f"[Bước 1] Đang tải Douyin HD ({quality_info})",
                             leave=False
                         ) as pbar:
                             for chunk in v_resp.iter_content(chunk_size=128 * 1024):
@@ -215,10 +242,10 @@ class DouyinDownloader:
                                     pbar.update(len(chunk))
                                     if progress_callback and total_size > 0:
                                         frac = min(downloaded_size / total_size, 1.0)
-                                        progress_callback(frac, f"Đang tải {downloaded_size//1024}/{total_size//1024} KB ({int(frac*100)}%)")
+                                        progress_callback(frac, f"Đang tải {quality_info} ({downloaded_size//1024}/{total_size//1024} KB)")
 
                     if output_path.exists() and output_path.stat().st_size > 1000:
-                        logger.info(f"Tải video thành công qua Official Douyin API: {output_path.name} ({output_path.stat().st_size//1024} KB)")
+                        logger.info(f"Tải video thành công qua Official Douyin API [{quality_info}]: {output_path.name} ({output_path.stat().st_size//1024} KB)")
                         return True
         except Exception as e:
             logger.warning(f"Tải qua Official Douyin API không thành công: {e}")

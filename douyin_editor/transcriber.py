@@ -86,7 +86,7 @@ class WhisperTranscriber:
                 "language": lang
             }
             with tqdm(total=100, desc="[Bước 2.3] Docker Faster-Whisper STT", leave=False) as pbar:
-                resp = requests.post(endpoint, files=files, data=data, timeout=600)
+                resp = requests.post(endpoint, files=files, data=data, timeout=3600)
                 pbar.update(100)
 
         if resp.status_code != 200:

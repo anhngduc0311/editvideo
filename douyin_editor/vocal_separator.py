@@ -263,7 +263,7 @@ def stft_numpy(waveform: np.ndarray, n_fft: int = 6144, hop_length: int = 1024) 
     )
     windowed = frames * window
     spec = sfft.rfft(windowed, n=n_fft, axis=-1, workers=-1)
-    return np.transpose(spec, (0, 2, 1)).astype(np.complex64)
+    return np.ascontiguousarray(np.transpose(spec, (0, 2, 1)), dtype=np.complex64)
 
 
 def istft_numpy(
@@ -301,7 +301,7 @@ def istft_numpy(
 class VocalSeparatorEngine:
     """
     AI Vocal & Instrumental Separation Engine sử dụng ONNX Runtime & MDX-Net.
-    Tối ưu hóa đa luồng, Zero-Copy buffer và SciPy PocketFFT.
+    Tối ưu hóa đa luồng, Zero-Copy buffer, SciPy PocketFFT và Phân đoạn Overlap-Add chống tràn RAM.
     """
 
     def __init__(self, models_dir: Path | str = "models", cpu_threads: Optional[int] = None):
@@ -354,32 +354,22 @@ class VocalSeparatorEngine:
         if progress_callback:
             progress_callback(1.0, f"Mô hình {model_key} đã sẵn sàng ({self.cpu_threads} luồng CPU)!")
 
-    def separate_waveform(
+    def _separate_single_segment(
         self,
-        mix: np.ndarray,
+        seg_mix: np.ndarray,
         overlap: float = 0.0,
         batch_size: int = 1,
-        progress_callback: Optional[Callable[[float, str], None]] = None,
         cancel_check: Optional[Callable[[], bool]] = None
-    ) -> Dict[str, np.ndarray]:
-        """Tách waveform stereo thành dictionary {'instrumental', 'vocals'}."""
-        if self.session is None or self.model_info is None:
-            raise RuntimeError("Mô hình AI chưa được tải. Hãy gọi load_model() trước.")
-
+    ) -> np.ndarray:
+        """Tách 1 phân đoạn waveform ngắn (<= 60s) bằng mô hình ONNX."""
         dim_f = self.model_info["dim_f"]
         dim_t = self.model_info["dim_t"]
         n_fft = self.model_info["n_fft"]
         hop_length = self.model_info["hop_length"]
         compensate = self.model_info["compensate"]
-        target = self.model_info["target"]
 
-        orig_len = mix.shape[1]
-        total_duration = orig_len / 44100.0
-
-        if progress_callback:
-            progress_callback(0.05, "Đang tính ma trận phổ âm thanh (SciPy PocketFFT)...")
-
-        spec = stft_numpy(mix, n_fft=n_fft, hop_length=hop_length)
+        orig_len = seg_mix.shape[1]
+        spec = stft_numpy(seg_mix, n_fft=n_fft, hop_length=hop_length)
         n_frames = spec.shape[2]
 
         if n_frames < dim_t:
@@ -431,31 +421,122 @@ class VocalSeparatorEngine:
                 accum_spec[1, :, st : st + dim_t] += out_r * chunk_win[0, 0]
                 weight[:, :, st : st + dim_t] += chunk_win
 
-            if progress_callback:
-                processed_count = min(total_chunks, i + cur_batch_len)
-                pct = 0.10 + 0.75 * (processed_count / total_chunks)
-                last_st = cur_starts[-1]
-                processed_sec = min(total_duration, (last_st + dim_t) * hop_length / 44100.0)
-                msg = f"Đang tách âm AI UVR... ({processed_count}/{total_chunks} đoạn | {processed_sec:.1f}s/{total_duration:.1f}s)"
-                progress_callback(pct, msg)
-
         accum_spec /= np.where(weight > 1e-6, weight, 1.0)
         full_out_spec = np.pad(accum_spec, ((0, 0), (0, 1), (0, 0)), mode="constant")
-
-        if progress_callback:
-            progress_callback(0.88, "Đang tái tạo dạng sóng âm thanh (iSTFT)...")
-
         target_wav = istft_numpy(full_out_spec, n_fft=n_fft, hop_length=hop_length, length=orig_len) * compensate
+        return target_wav
+
+    def separate_waveform(
+        self,
+        mix: np.ndarray,
+        overlap: float = 0.0,
+        batch_size: int = 1,
+        segment_duration: float = 60.0,
+        crossfade_duration: float = 2.0,
+        progress_callback: Optional[Callable[[float, str], None]] = None,
+        cancel_check: Optional[Callable[[], bool]] = None
+    ) -> Dict[str, np.ndarray]:
+        """
+        Tách waveform stereo thành dictionary {'instrumental', 'vocals'}.
+        Tự động phân đoạn (Segment Chunking + Overlap-Add Crossfade) để đảm bảo không bị tràn RAM (OOM)
+        dù file âm thanh dài hàng chục phút đến vài giờ.
+        """
+        if self.session is None or self.model_info is None:
+            raise RuntimeError("Mô hình AI chưa được tải. Hãy gọi load_model() trước.")
+
+        target = self.model_info["target"]
+        orig_len = mix.shape[1]
+        sample_rate = 44100
+        total_duration = orig_len / sample_rate
+
+        segment_samples = int(segment_duration * sample_rate)
+        overlap_samples = int(crossfade_duration * sample_rate)
+        step_samples = max(sample_rate, segment_samples - overlap_samples)
+
+        # Nếu audio ngắn hơn hoặc bằng 1 segment -> xử lý trực tiếp đơn segment
+        if orig_len <= segment_samples:
+            if progress_callback:
+                progress_callback(0.10, f"Đang phân tích và tách âm AI ({total_duration:.1f}s)...")
+
+            target_wav = self._separate_single_segment(
+                seg_mix=mix,
+                overlap=overlap,
+                batch_size=batch_size,
+                cancel_check=cancel_check
+            )
+
+            if target == "instrumental":
+                instrumental = target_wav
+                vocals = mix - instrumental
+            else:
+                vocals = target_wav
+                instrumental = mix - vocals
+
+            if progress_callback:
+                progress_callback(1.0, "Hoàn tất phân tách các track âm thanh!")
+
+            return {
+                "instrumental": instrumental,
+                "vocals": vocals
+            }
+
+        # Nếu audio dài -> phân đoạn thông minh với Overlap-Add Crossfade chống tràn RAM
+        seg_starts = []
+        pos = 0
+        while pos < orig_len:
+            seg_starts.append(pos)
+            if pos + segment_samples >= orig_len:
+                break
+            pos += step_samples
+
+        total_segs = len(seg_starts)
+        target_full = np.zeros_like(mix, dtype=np.float32)
+        weight_full = np.zeros((1, orig_len), dtype=np.float32)
+
+        for seg_idx, st in enumerate(seg_starts):
+            if cancel_check and cancel_check():
+                raise RuntimeError("Quá trình tách âm AI đã bị hủy.")
+
+            end = min(orig_len, st + segment_samples)
+            seg_len = end - st
+            seg_mix = mix[:, st:end]
+
+            if progress_callback:
+                pct = 0.05 + 0.90 * (seg_idx / total_segs)
+                cur_sec = min(total_duration, end / sample_rate)
+                msg = f"Đang tách AI UVR... [Đoạn {seg_idx + 1}/{total_segs}] ({cur_sec:.1f}s/{total_duration:.1f}s)"
+                progress_callback(pct, msg)
+
+            seg_target = self._separate_single_segment(
+                seg_mix=seg_mix,
+                overlap=overlap,
+                batch_size=batch_size,
+                cancel_check=cancel_check
+            )
+
+            # Tạo cửa sổ trọng số crossfade mượt mà
+            seg_weight = np.ones((1, seg_len), dtype=np.float32)
+            if st > 0:
+                fade_in_len = min(overlap_samples, seg_len)
+                seg_weight[0, :fade_in_len] = np.linspace(0.0, 1.0, fade_in_len, dtype=np.float32)
+            if end < orig_len:
+                fade_out_len = min(overlap_samples, seg_len)
+                seg_weight[0, -fade_out_len:] = np.linspace(1.0, 0.0, fade_out_len, dtype=np.float32)
+
+            target_full[:, st:end] += seg_target * seg_weight
+            weight_full[:, st:end] += seg_weight
+
+        target_full /= np.maximum(weight_full, 1e-8)
 
         if target == "instrumental":
-            instrumental = target_wav
+            instrumental = target_full
             vocals = mix - instrumental
         else:
-            vocals = target_wav
+            vocals = target_full
             instrumental = mix - vocals
 
         if progress_callback:
-            progress_callback(0.95, "Hoàn tất phân tách các track âm thanh!")
+            progress_callback(1.0, "Hoàn tất phân tách các track âm thanh!")
 
         return {
             "instrumental": instrumental,

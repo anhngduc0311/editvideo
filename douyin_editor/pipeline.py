@@ -61,6 +61,7 @@ class DouyinAutoPipeline:
         table.add_row("Douyin Input", input_url[:60] + ("..." if len(input_url) > 60 else ""))
         table.add_row("Tốc độ video (Speed)", f"{self.config.speed_factor}x (Chậm {int((1-self.config.speed_factor)*100)}%)")
         table.add_row("Tốc độ xuất bản", f"{getattr(self.config, 'final_speed', 1.20)}x")
+        table.add_row("Độ phân giải xuất", f"{getattr(self.config, 'export_resolution', '1080p').upper()} (Chuẩn Full HD)")
         table.add_row("Vùng mờ Sub gốc (Blur)", f"Y: {self.config.blur_region.y_ratio*100:.0f}% | Height: {self.config.blur_region.height_ratio*100:.0f}%")
         if getattr(self.config, "llm_provider", "deepseek") == "chatgpt_cookie":
             ai_info = f"ChatGPT Web Cookie ({getattr(self.config, 'chatgpt_model_name', 'auto')})"

@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 import re
 import subprocess
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 from tqdm import tqdm
 
 from config import PipelineConfig
@@ -68,39 +68,78 @@ class VideoCompositor:
         output_srt.write_text(scaled_content, encoding="utf-8")
         return output_srt
 
-    def build_force_style_string(self, video_width: int = 1280, video_height: int = 720) -> str:
-        s = self.config.subtitle_style
-        margin_v = s.margin_v
+    def get_target_resolution(self, in_w: int, in_h: int) -> Tuple[int, int]:
+        """
+        Tính toán độ phân giải đầu ra theo cấu hình export_resolution:
+        - "1080p": 1920x1080 (ngang) hoặc 1080x1920 (dọc) (Chuẩn Full HD tối ưu YouTube)
+        - "720p": 1280x720 (ngang) hoặc 720x1280 (dọc)
+        - "2k": 2560x1440 (ngang) hoặc 1440x2560 (dọc)
+        - "original": giữ nguyên kích thước video gốc
+        """
+        mode = str(getattr(self.config, "export_resolution", "1080p")).lower().strip()
+        if mode == "original":
+            return in_w // 2 * 2, in_h // 2 * 2
 
+        is_portrait = in_h > in_w
+        if mode == "720p":
+            return (720, 1280) if is_portrait else (1280, 720)
+        elif mode == "2k":
+            return (1440, 2560) if is_portrait else (2560, 1440)
+        else:
+            # Mặc định 1080p Full HD
+            return (1080, 1920) if is_portrait else (1920, 1080)
+
+    def build_force_style_string(self, video_width: int = 1920, video_height: int = 1080, orig_width: Optional[int] = None, orig_height: Optional[int] = None) -> str:
+        s = self.config.subtitle_style
+        
+        # Tỉ lệ scale font chữ theo chiều cao canvas đích so với chuẩn base 720p
+        base_h = 720.0 if video_width >= video_height else 1280.0
+        scale_factor = video_height / base_h
+        scaled_font_size = max(12, int(round(s.font_size * scale_factor)))
+        scaled_outline_width = max(0.5, round(s.outline_width * scale_factor, 1))
+        scaled_shadow = max(0.0, round(s.shadow * scale_factor, 1))
+        scaled_margin_v = max(10, int(round(s.margin_v * scale_factor)))
+
+        margin_v = scaled_margin_v
         # Tự động căn chỉnh chính xác phụ đề lọt vào giữa vùng làm mờ nếu vùng mờ đang bật
         if getattr(s, "snap_to_blur", True) and self.config.blur_region.enabled:
-            _, by, _, bh = self.calculate_blur_box(video_width, video_height)
-            margin_v = int(video_height - (by + bh) + max(0, (bh - s.font_size) / 2))
+            _, by, _, bh = self.calculate_blur_box(video_width, video_height, orig_width, orig_height)
+            margin_v = int(video_height - (by + bh) + max(0, (bh - scaled_font_size) / 2))
             margin_v = max(10, min(margin_v, video_height - 20))
 
         style_parts = [
             f"PlayResX={video_width}",
             f"PlayResY={video_height}",
             f"FontName={s.font_name}",
-            f"FontSize={s.font_size}",
+            f"FontSize={scaled_font_size}",
             f"PrimaryColour={s.primary_color}",
             f"OutlineColour={s.outline_color}",
             f"BackColour={s.back_color}",
             f"Bold={s.bold}",
-            f"Outline={s.outline_width}",
-            f"Shadow={s.shadow}",
+            f"Outline={scaled_outline_width}",
+            f"Shadow={scaled_shadow}",
             f"MarginV={margin_v}",
             f"Alignment={s.alignment}",
             f"BorderStyle={getattr(s, 'border_style', 1)}"
         ]
         return ",".join(style_parts)
 
-    def calculate_blur_box(self, width: int, height: int):
+    def calculate_blur_box(self, width: int, height: int, orig_width: Optional[int] = None, orig_height: Optional[int] = None):
         b = self.config.blur_region
-        w = b.width if b.width is not None else width
-        h = b.height if b.height is not None else int(height * b.height_ratio)
-        x = b.x if b.x is not None else int((width - w) / 2)
-        y = b.y if b.y is not None else int(height * b.y_ratio)
+        
+        # Nếu có toạ độ pixel cụ thể từ video gốc và canvas đích đã được scale lên 1080p
+        if b.x is not None and orig_width and orig_width != width:
+            scale_x = width / float(orig_width)
+            scale_y = height / float(orig_height) if orig_height else scale_x
+            x = int(b.x * scale_x)
+            y = int(b.y * scale_y)
+            w = int(b.width * scale_x) if b.width is not None else width
+            h = int(b.height * scale_y) if b.height is not None else int(height * b.height_ratio)
+        else:
+            w = b.width if b.width is not None else width
+            h = b.height if b.height is not None else int(height * b.height_ratio)
+            x = b.x if b.x is not None else int((width - w) / 2)
+            y = b.y if b.y is not None else int(height * b.y_ratio)
 
         x = max(0, min(int(x), width - 2)) // 2 * 2
         y = max(0, min(int(y), height - 2)) // 2 * 2
@@ -123,6 +162,7 @@ class VideoCompositor:
         """
         Quy trình Render 1-Pass Đỉnh Cao:
         Gộp tất cả các tác vụ vào 1 lần render duy nhất:
+        - Tự động Scale lên Full HD 1080p (1920x1080) chuẩn YouTube sắc nét 100%
         - Làm chậm video 0.70x (setpts) và tăng tốc xuất bản 1.2x ở Bước 8
         - Làm mờ phụ đề cũ (crop + boxblur + overlay)
         - Đóng cứng phụ đề tiếng Việt (subtitles filter chuẩn tốc độ 1.2x)
@@ -150,7 +190,10 @@ class VideoCompositor:
         pts_mult = (1.0 / self.config.speed_factor) / final_speed
         real_target_duration = total_duration_sec / final_speed if final_speed > 0 else total_duration_sec
 
-        x, y, w, h = self.calculate_blur_box(video_width, video_height)
+        target_w, target_h = self.get_target_resolution(video_width, video_height)
+        logger.info(f"[Master Render] Đầu vào: {video_width}x{video_height} -> Xuất chuẩn: {target_w}x{target_h} ({getattr(self.config, 'export_resolution', '1080p').upper()})")
+
+        x, y, w, h = self.calculate_blur_box(target_w, target_h, video_width, video_height)
         power = self.config.blur_region.blur_power
         safe_power = max(1, min(power, min(w, h) // 4, 25))
 
@@ -160,24 +203,26 @@ class VideoCompositor:
             scaled_srt_path = output_path.parent / f"{output_path.stem}_scaled_{final_speed}x.srt"
             burn_srt_file = self.scale_srt_file(srt_file, scaled_srt_path, final_speed)
 
-        # 1. Xây dựng video filter
+        # 1. Xây dựng video filter kèm scale Lanczos chất lượng cao
+        scale_filter = f",scale={target_w}:{target_h}:flags=lanczos" if (target_w != video_width or target_h != video_height) else ""
+
         v_filter_parts = []
         if self.config.blur_region.enabled and w >= 4 and h >= 4:
-            v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS,format=yuv420p,split=2[v_speed][v_crop];")
+            v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS{scale_filter},format=yuv420p,split=2[v_speed][v_crop];")
             v_filter_parts.append(f"[v_crop]crop={w}:{h}:{x}:{y},boxblur={safe_power}:5[v_blurred];")
             if has_subtitles:
                 escaped_srt = self._escape_ffmpeg_path(burn_srt_file)
-                force_style = self.build_force_style_string(video_width, video_height)
+                force_style = self.build_force_style_string(target_w, target_h, video_width, video_height)
                 v_filter_parts.append(f"[v_speed][v_blurred]overlay={x}:{y},subtitles='{escaped_srt}':force_style='{force_style}'[v_out]")
             else:
                 v_filter_parts.append(f"[v_speed][v_blurred]overlay={x}:{y}[v_out]")
         else:
             if has_subtitles:
                 escaped_srt = self._escape_ffmpeg_path(burn_srt_file)
-                force_style = self.build_force_style_string(video_width, video_height)
-                v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS,format=yuv420p,subtitles='{escaped_srt}':force_style='{force_style}'[v_out]")
+                force_style = self.build_force_style_string(target_w, target_h, video_width, video_height)
+                v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS{scale_filter},format=yuv420p,subtitles='{escaped_srt}':force_style='{force_style}'[v_out]")
             else:
-                v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS,format=yuv420p[v_out]")
+                v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS{scale_filter},format=yuv420p[v_out]")
 
         v_filter_str = "".join(v_filter_parts)
 

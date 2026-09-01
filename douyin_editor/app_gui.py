@@ -79,6 +79,7 @@ class DouyinEditorApp(ctk.CTk):
         self.saved_margin_v = "45"
         self.saved_alignment = "2"
         self.saved_sub_preset = "badge_white_on_black"
+        self.saved_export_res = "🔥 1080p Full HD (Chuẩn YouTube)"
         if CONFIG_FILE.exists():
             try:
                 data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
@@ -94,6 +95,7 @@ class DouyinEditorApp(ctk.CTk):
                 self.saved_margin_v = data.get("subtitle_margin_v", "45")
                 self.saved_alignment = data.get("subtitle_alignment", "2")
                 self.saved_sub_preset = data.get("subtitle_preset_id", "badge_white_on_black")
+                self.saved_export_res = data.get("export_resolution", "🔥 1080p Full HD (Chuẩn YouTube)")
             except Exception:
                 pass
 
@@ -120,6 +122,7 @@ class DouyinEditorApp(ctk.CTk):
                 "subtitle_margin_v": str(int(self.slider_margin_v.get())) if hasattr(self, "slider_margin_v") else "45",
                 "subtitle_alignment": str(self._get_alignment_code()) if hasattr(self, "seg_alignment") else "2",
                 "subtitle_preset_id": getattr(self, "selected_sub_preset_id", "badge_white_on_black"),
+                "export_resolution": self.cmb_export_res.get() if hasattr(self, "cmb_export_res") else "🔥 1080p Full HD (Chuẩn YouTube)",
             }
             CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
@@ -425,7 +428,28 @@ class DouyinEditorApp(ctk.CTk):
             command=lambda v: self.lbl_final_speed_val.configure(text=f"{v:.2f}x (Nhanh & cuốn hút)" if v > 1.05 else f"{v:.2f}x (Chuẩn)")
         )
         self.slider_final_speed.set(1.20)
-        self.slider_final_speed.pack(fill="x", padx=12, pady=(0, 8))
+        self.slider_final_speed.pack(fill="x", padx=12, pady=(0, 6))
+
+        # 3. Độ phân giải xuất video (Chuẩn 1080p Full HD tối ưu YouTube)
+        res_row = ctk.CTkFrame(video_card, fg_color="transparent")
+        res_row.pack(fill="x", padx=12, pady=(4, 6))
+        ctk.CTkLabel(res_row, text="3. Độ phân giải xuất (Chuẩn YouTube):").pack(side="left")
+        self.cmb_export_res = ctk.CTkComboBox(
+            res_row,
+            values=[
+                "🔥 1080p Full HD (Chuẩn YouTube)",
+                "🎬 Gốc (Original)",
+                "⚡ 720p HD (Render nhanh)",
+                "💎 2K QHD (1440p)"
+            ],
+            width=230,
+            state="readonly"
+        )
+        saved_res_text = getattr(self, "saved_export_res", "🔥 1080p Full HD (Chuẩn YouTube)")
+        if not any(saved_res_text in v for v in self.cmb_export_res._values):
+            saved_res_text = "🔥 1080p Full HD (Chuẩn YouTube)"
+        self.cmb_export_res.set(saved_res_text)
+        self.cmb_export_res.pack(side="right")
 
         # Checkbox Blur
         self.chk_blur = ctk.CTkCheckBox(video_card, text="Làm mờ phụ đề tiếng Trung gốc (Boxblur)", font=ctk.CTkFont(weight="bold"))
@@ -1382,6 +1406,17 @@ class DouyinEditorApp(ctk.CTk):
         else:
             topic_code = "general"
 
+        res_val = self.cmb_export_res.get() if hasattr(self, "cmb_export_res") else "1080p"
+        res_code = "1080p"
+        if "1080p" in res_val:
+            res_code = "1080p"
+        elif "720p" in res_val:
+            res_code = "720p"
+        elif "2K" in res_val or "1440p" in res_val:
+            res_code = "2k"
+        elif "Gốc" in res_val or "Original" in res_val:
+            res_code = "original"
+
         config = PipelineConfig(
             llm_provider=llm_provider,
             deepseek_api_key=api_key,
@@ -1391,6 +1426,7 @@ class DouyinEditorApp(ctk.CTk):
             topic_preset=topic_code,
             speed_factor=speed_factor,
             final_speed=final_speed,
+            export_resolution=res_code,
             keep_bgm=keep_bgm,
             bgm_volume=bgm_vol,
             separation_speed=sep_speed_code,
