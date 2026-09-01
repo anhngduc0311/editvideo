@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 import re
 import subprocess
-from typing import Callable, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 from tqdm import tqdm
 
 from config import PipelineConfig
@@ -67,6 +67,92 @@ class VideoCompositor:
         scaled_content = re.sub(pattern, repl, content)
         output_srt.write_text(scaled_content, encoding="utf-8")
         return output_srt
+
+    @staticmethod
+    def parse_srt_time_intervals(srt_path: Optional[Path]) -> List[Tuple[float, float]]:
+        """Đọc và trích xuất danh sách các khoảng thời gian (start_sec, end_sec) từ file SRT"""
+        if not srt_path or not Path(srt_path).exists():
+            return []
+        try:
+            content = Path(srt_path).read_text(encoding="utf-8")
+        except Exception:
+            return []
+        intervals: List[Tuple[float, float]] = []
+        pattern = r"(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})"
+        for match in re.finditer(pattern, content):
+            h1, m1, s1, ms1, h2, m2, s2, ms2 = map(int, match.groups())
+            t1 = h1 * 3600 + m1 * 60 + s1 + ms1 / 1000.0
+            t2 = h2 * 3600 + m2 * 60 + s2 + ms2 / 1000.0
+            if t2 > t1:
+                intervals.append((t1, t2))
+        return intervals
+
+    @classmethod
+    def extract_blur_timeline_intervals(
+        cls,
+        srt_files: List[Optional[Path]],
+        final_speed: float = 1.0,
+        pad_before: float = 0.15,
+        pad_after: float = 0.20,
+        min_gap_merge: float = 0.50,
+        total_duration: float = 0.0,
+        are_files_slowed: bool = True
+    ) -> List[Tuple[float, float]]:
+        """
+        Tính toán danh sách các khoảng thời gian cần làm mờ trên timeline video thành phẩm:
+        - Thu thập mốc thời gian từ phụ đề tiếng Trung gốc (Whisper) và phụ đề tiếng Việt (TTS sync).
+        - Scale mốc thời gian theo final_speed.
+        - Đệm an toàn pad_before / pad_after để đảm bảo 100% không lọt khung hình phụ đề tiếng Trung.
+        - Tự động gộp các khoảng mờ gần nhau (< min_gap_merge) để tránh nhấp nháy.
+        """
+        raw_intervals: List[Tuple[float, float]] = []
+        speed_divisor = final_speed if (are_files_slowed and final_speed > 0) else 1.0
+
+        for srt_path in srt_files:
+            if not srt_path:
+                continue
+            parsed = cls.parse_srt_time_intervals(srt_path)
+            for s, e in parsed:
+                scaled_s = s / speed_divisor
+                scaled_e = e / speed_divisor
+                raw_intervals.append((scaled_s, scaled_e))
+
+        if not raw_intervals:
+            return []
+
+        # 1. Thêm khoảng đệm an toàn
+        padded_intervals: List[Tuple[float, float]] = []
+        max_limit = total_duration if total_duration > 0 else 999999.0
+        for s, e in raw_intervals:
+            start_val = max(0.0, s - pad_before)
+            end_val = min(max_limit, e + pad_after)
+            if end_val > start_val:
+                padded_intervals.append((start_val, end_val))
+
+        # 2. Sắp xếp theo thứ tự thời gian bắt đầu
+        padded_intervals.sort(key=lambda x: x[0])
+
+        # 3. Gộp các khoảng đè nhau hoặc cách nhau dưới min_gap_merge
+        merged: List[List[float]] = []
+        for s, e in padded_intervals:
+            if not merged:
+                merged.append([s, e])
+            else:
+                last_s, last_e = merged[-1]
+                if s <= last_e + min_gap_merge:
+                    merged[-1][1] = max(last_e, e)
+                else:
+                    merged.append([s, e])
+
+        return [(round(m[0], 3), round(m[1], 3)) for m in merged]
+
+    @staticmethod
+    def build_overlay_enable_expression(intervals: List[Tuple[float, float]]) -> Optional[str]:
+        """Tạo biểu thức enable cho filter overlay của FFmpeg: enable='between(t,s1,e1)+between(t,s2,e2)+...'"""
+        if not intervals:
+            return None
+        parts = [f"between(t,{s:.3f},{e:.3f})" for s, e in intervals]
+        return "+".join(parts)
 
     def get_target_resolution(self, in_w: int, in_h: int) -> Tuple[int, int]:
         """
@@ -158,14 +244,15 @@ class VideoCompositor:
         total_duration_sec: float,
         video_width: int = 1280,
         video_height: int = 720,
-        progress_callback: Optional[Callable[[float, str], None]] = None
+        progress_callback: Optional[Callable[[float, str], None]] = None,
+        original_srt_file: Optional[Path] = None
     ) -> Path:
         """
         Quy trình Render 1-Pass Đỉnh Cao:
         Gộp tất cả các tác vụ vào 1 lần render duy nhất:
         - Tự động Scale lên Full HD 1080p (1920x1080) chuẩn YouTube sắc nét 100%
         - Làm chậm video 0.70x (setpts) và tăng tốc xuất bản 1.2x ở Bước 8
-        - Làm mờ phụ đề cũ (crop + boxblur + overlay)
+        - Làm mờ thông minh phụ đề cũ (crop + boxblur + dynamic timeline overlay: chỉ mờ khi có phụ đề)
         - Đóng cứng phụ đề tiếng Việt (subtitles filter chuẩn tốc độ 1.2x)
         - Hòa âm giọng đọc CapCut + Nhạc nền (TTS + BGM amix + atempo=1.2x)
         """
@@ -207,16 +294,41 @@ class VideoCompositor:
         # 1. Xây dựng video filter kèm scale Lanczos chất lượng cao
         scale_filter = f",scale={target_w}:{target_h}:flags=lanczos" if (target_w != video_width or target_h != video_height) else ""
 
+        # Tính toán khoảng thời gian làm mờ thông minh (Smart Blur Timeline)
+        smart_blur = getattr(self.config.blur_region, "smart_blur", True)
+        overlay_enable_clause = ""
+        should_apply_blur = self.config.blur_region.enabled and w >= 4 and h >= 4
+
+        if should_apply_blur:
+            if smart_blur:
+                # Thu thập SRT files: original_srt_file (tiếng Trung gốc) và srt_file (tiếng Việt)
+                active_intervals = self.extract_blur_timeline_intervals(
+                    srt_files=[original_srt_file, srt_file],
+                    final_speed=final_speed,
+                    pad_before=getattr(self.config.blur_region, "pad_before", 0.15),
+                    pad_after=getattr(self.config.blur_region, "pad_after", 0.20),
+                    min_gap_merge=getattr(self.config.blur_region, "min_gap_merge", 0.50),
+                    total_duration=real_target_duration,
+                    are_files_slowed=True
+                )
+                if active_intervals:
+                    enable_expr = self.build_overlay_enable_expression(active_intervals)
+                    overlay_enable_clause = f":enable='{enable_expr}'"
+                    logger.info(f"[Smart Blur] Đã kích hoạt {len(active_intervals)} khoảng làm mờ thông minh theo phụ đề (Tự ẩn khi không có phụ đề).")
+                else:
+                    logger.info("[Smart Blur] Không phát hiện phụ đề nào trong video -> Giữ nguyên video gốc không làm mờ.")
+                    should_apply_blur = False
+
         v_filter_parts = []
-        if self.config.blur_region.enabled and w >= 4 and h >= 4:
+        if should_apply_blur:
             v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS{scale_filter},format=yuv420p,split=2[v_speed][v_crop];")
             v_filter_parts.append(f"[v_crop]crop={w}:{h}:{x}:{y},boxblur={safe_power}:5[v_blurred];")
             if has_subtitles:
                 escaped_srt = self._escape_ffmpeg_path(burn_srt_file)
                 force_style = self.build_force_style_string(target_w, target_h, video_width, video_height)
-                v_filter_parts.append(f"[v_speed][v_blurred]overlay={x}:{y},subtitles='{escaped_srt}':force_style='{force_style}'[v_out]")
+                v_filter_parts.append(f"[v_speed][v_blurred]overlay={x}:{y}{overlay_enable_clause},subtitles='{escaped_srt}':force_style='{force_style}'[v_out]")
             else:
-                v_filter_parts.append(f"[v_speed][v_blurred]overlay={x}:{y}[v_out]")
+                v_filter_parts.append(f"[v_speed][v_blurred]overlay={x}:{y}{overlay_enable_clause}[v_out]")
         else:
             if has_subtitles:
                 escaped_srt = self._escape_ffmpeg_path(burn_srt_file)
@@ -224,6 +336,7 @@ class VideoCompositor:
                 v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS{scale_filter},format=yuv420p,subtitles='{escaped_srt}':force_style='{force_style}'[v_out]")
             else:
                 v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS{scale_filter},format=yuv420p[v_out]")
+
 
         v_filter_str = "".join(v_filter_parts)
 

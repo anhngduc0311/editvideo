@@ -258,19 +258,40 @@ class VideoPreprocessor:
 
         logger.info(f"Vùng làm mờ phụ đề (Bounding Box): x={x}, y={y}, w={w}, h={h}")
 
-        if self.blur_config.enabled and w >= 4 and h >= 4:
+        # Tính toán Smart Blur nếu có file phụ đề SRT
+        overlay_enable_clause = ""
+        should_apply_blur = self.blur_config.enabled and w >= 4 and h >= 4
+        if should_apply_blur and getattr(self.blur_config, "smart_blur", True) and srt_file and Path(srt_file).exists():
+            from compositor import VideoCompositor
+            intervals = VideoCompositor.extract_blur_timeline_intervals(
+                srt_files=[Path(srt_file)],
+                final_speed=1.0,
+                pad_before=getattr(self.blur_config, "pad_before", 0.15),
+                pad_after=getattr(self.blur_config, "pad_after", 0.20),
+                min_gap_merge=getattr(self.blur_config, "min_gap_merge", 0.50),
+                total_duration=target_duration,
+                are_files_slowed=False
+            )
+            if intervals:
+                expr = VideoCompositor.build_overlay_enable_expression(intervals)
+                if expr:
+                    overlay_enable_clause = f":enable='{expr}'"
+            else:
+                should_apply_blur = False
+
+        if should_apply_blur:
             if has_audio:
                 filter_complex = (
                     f"[0:v]setpts={pts_mult:.6f}*PTS,format=yuv420p,split=2[v_speed][v_crop];"
                     f"[v_crop]crop={w}:{h}:{x}:{y},boxblur={safe_power}:5[v_blurred];"
-                    f"[v_speed][v_blurred]overlay={x}:{y}[v_out];"
+                    f"[v_speed][v_blurred]overlay={x}:{y}{overlay_enable_clause}[v_out];"
                     f"[0:a]atempo={self.speed_factor:.4f},aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[a_out]"
                 )
             else:
                 filter_complex = (
                     f"[0:v]setpts={pts_mult:.6f}*PTS,format=yuv420p,split=2[v_speed][v_crop];"
                     f"[v_crop]crop={w}:{h}:{x}:{y},boxblur={safe_power}:5[v_blurred];"
-                    f"[v_speed][v_blurred]overlay={x}:{y}[v_out];"
+                    f"[v_speed][v_blurred]overlay={x}:{y}{overlay_enable_clause}[v_out];"
                     f"anullsrc=r=44100:cl=stereo,atrim=duration={target_duration:.2f}[a_out]"
                 )
         else:

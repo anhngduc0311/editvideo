@@ -31,6 +31,11 @@ class BlurRegion:
     height_ratio: float = 0.18    # Chiều cao vùng mờ chiếm 18% chiều cao video
     blur_power: int = 15          # Độ mờ của filter boxblur (lpower:rpower)
     enabled: bool = True
+    smart_blur: bool = True       # Làm mờ thông minh: chỉ mờ khi có phụ đề tiếng Trung, tự ẩn khi không có
+    pad_before: float = 0.15      # Đệm thời gian trước câu nói (giây) để đảm bảo không lọt phụ đề tiếng Trung
+    pad_after: float = 0.20       # Đệm thời gian sau câu nói (giây) để đảm bảo không lọt phụ đề tiếng Trung
+    min_gap_merge: float = 0.50   # Nối liền 2 khoảng mờ nếu cách nhau dưới 0.5s để chống nhấp nháy
+
 
 
 @dataclass

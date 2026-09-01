@@ -70,6 +70,10 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--check-api", action="store_true", help="Kiem tra trang thai va Rate Limit cua AI API Key.")
     parser.add_argument("--blur-y-ratio", type=float, default=0.72, help="Toa do Y bat dau lam mo (ty le 0.0-1.0).")
     parser.add_argument("--blur-height-ratio", type=float, default=0.18, help="Chieu cao vung lam mo (ty le 0.0-1.0).")
+    parser.add_argument("--no-smart-blur", action="store_true", help="Tat lam mo thong minh (luon lam mo toan bo video).")
+    parser.add_argument("--blur-pad-before", type=float, default=0.15, help="Dem thoi gian truoc cau thoai (giay, mac dinh: 0.15).")
+    parser.add_argument("--blur-pad-after", type=float, default=0.20, help="Dem thoi gian sau cau thoai (giay, mac dinh: 0.20).")
+    parser.add_argument("--blur-gap-merge", type=float, default=0.50, help="Gop khoang cach nho hon nguong nay de chong nhap nhay (giay, mac dinh: 0.50).")
     return parser.parse_args()
 
 
@@ -146,7 +150,11 @@ def main():
             y_ratio=args.blur_y_ratio,
             height_ratio=args.blur_height_ratio,
             blur_power=15,
-            enabled=True
+            enabled=True,
+            smart_blur=not args.no_smart_blur,
+            pad_before=args.blur_pad_before,
+            pad_after=args.blur_pad_after,
+            min_gap_merge=args.blur_gap_merge
         ),
         subtitle_style=sub_style,
         tts_config=TTSConfig(

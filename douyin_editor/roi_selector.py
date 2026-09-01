@@ -879,7 +879,11 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
             y_ratio=y_ratio,
             height_ratio=height_ratio,
             blur_power=15,
-            enabled=True
+            enabled=True,
+            smart_blur=getattr(self.blur_region, "smart_blur", True),
+            pad_before=getattr(self.blur_region, "pad_before", 0.15),
+            pad_after=getattr(self.blur_region, "pad_after", 0.20),
+            min_gap_merge=getattr(self.blur_region, "min_gap_merge", 0.50)
         )
 
         saved_style = copy.copy(self.sub_style)

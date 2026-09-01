@@ -227,7 +227,8 @@ class DouyinAutoPipeline:
                 total_duration_sec=total_duration,
                 video_width=video_width,
                 video_height=video_height,
-                progress_callback=lambda p, msg: notify(6, "Master Render 1-Pass", msg)
+                progress_callback=lambda p, msg: notify(6, "Master Render 1-Pass", msg),
+                original_srt_file=original_srt if original_srt.exists() else None
             )
             overall_pbar.update(3)
 

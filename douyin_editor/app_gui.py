@@ -80,6 +80,7 @@ class DouyinEditorApp(ctk.CTk):
         self.saved_alignment = "2"
         self.saved_sub_preset = "badge_white_on_black"
         self.saved_export_res = "🔥 1080p Full HD (Chuẩn YouTube)"
+        self.saved_smart_blur = True
         if CONFIG_FILE.exists():
             try:
                 data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
@@ -96,6 +97,7 @@ class DouyinEditorApp(ctk.CTk):
                 self.saved_alignment = data.get("subtitle_alignment", "2")
                 self.saved_sub_preset = data.get("subtitle_preset_id", "badge_white_on_black")
                 self.saved_export_res = data.get("export_resolution", "🔥 1080p Full HD (Chuẩn YouTube)")
+                self.saved_smart_blur = data.get("smart_blur", True)
             except Exception:
                 pass
 
@@ -123,6 +125,7 @@ class DouyinEditorApp(ctk.CTk):
                 "subtitle_alignment": str(self._get_alignment_code()) if hasattr(self, "seg_alignment") else "2",
                 "subtitle_preset_id": getattr(self, "selected_sub_preset_id", "badge_white_on_black"),
                 "export_resolution": self.cmb_export_res.get() if hasattr(self, "cmb_export_res") else "🔥 1080p Full HD (Chuẩn YouTube)",
+                "smart_blur": bool(self.chk_smart_blur.get()) if hasattr(self, "chk_smart_blur") else True,
             }
             CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
@@ -454,7 +457,20 @@ class DouyinEditorApp(ctk.CTk):
         # Checkbox Blur
         self.chk_blur = ctk.CTkCheckBox(video_card, text="Làm mờ phụ đề tiếng Trung gốc (Boxblur)", font=ctk.CTkFont(weight="bold"))
         self.chk_blur.select()
-        self.chk_blur.pack(anchor="w", padx=12, pady=4)
+        self.chk_blur.pack(anchor="w", padx=12, pady=(4, 2))
+
+        # Checkbox Làm mờ thông minh (Chỉ mờ khi có phụ đề)
+        self.chk_smart_blur = ctk.CTkCheckBox(
+            video_card,
+            text="✨ Làm mờ thông minh (Tự ẩn vùng mờ khi không có phụ đề)",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#38bdf8"
+        )
+        if getattr(self, "saved_smart_blur", True):
+            self.chk_smart_blur.select()
+        else:
+            self.chk_smart_blur.deselect()
+        self.chk_smart_blur.pack(anchor="w", padx=12, pady=(2, 4))
 
         # NÚT KHOANH VÙNG TRỰC TIẾP
         btn_roi_row = ctk.CTkFrame(video_card, fg_color="transparent")
@@ -1322,9 +1338,11 @@ class DouyinEditorApp(ctk.CTk):
         font_name = self.cmb_font.get()
         font_size = int(self.cmb_font_size.get())
         blur_enabled = bool(self.chk_blur.get())
+        smart_blur_enabled = bool(self.chk_smart_blur.get()) if hasattr(self, "chk_smart_blur") else True
         is_interactive_roi = bool(self.chk_interactive_roi.get())
 
         self.current_blur_region.enabled = blur_enabled
+        self.current_blur_region.smart_blur = smart_blur_enabled
 
         # Xây dựng SubtitleStyle hoàn chỉnh từ mẫu đang chọn và font/size/margin/alignment
         sub_style = copy.copy(getattr(self, "current_subtitle_style", SUBTITLE_PRESETS["badge_white_on_black"]["style"]))
