@@ -42,7 +42,7 @@ class SubtitleStyle:
     preset_id: str = "badge_white_on_black"
     name: str = "Chữ trắng hộp đen (Georgia Serif)"
     font_name: str = "Georgia"
-    font_size: int = 18
+    font_size: int = 26
     primary_color: str = "&H00FFFFFF"    # Chữ trắng (ABGR)
     outline_color: str = "&H00000000"    # Viền đen
     back_color: str = "&H00000000"       # Hộp đen (100% opacity)
@@ -52,7 +52,6 @@ class SubtitleStyle:
     bold: int = 1                        # In đậm (1 = True, 0 = False)
     alignment: int = 2                   # Căn giữa dưới cùng (ASS standard = 2)
     border_style: int = 3                # 1 = Viền & Đổ bóng, 3 = Hộp chữ nhật (Badge)
-    snap_to_blur: bool = True            # Tự động căn chỉnh phụ đề khớp chính giữa vùng làm mờ
 
 
 SUBTITLE_PRESETS = {
@@ -239,7 +238,7 @@ SUBTITLE_PRESETS = {
             preset_id="badge_white_on_black",
             name="Chữ trắng hộp đen (Georgia Serif)",
             font_name="Georgia",
-            font_size=18,
+            font_size=26,
             primary_color="&H00FFFFFF",  # Trắng
             outline_color="&H00000000",
             back_color="&H00000000",     # Hộp đen

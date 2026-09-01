@@ -331,19 +331,6 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
             text_color="#38bdf8"
         ).pack(anchor="w", padx=12, pady=(10, 4))
 
-        # Checkbox Chế độ Auto-snap vs Chỉnh tay
-        self.chk_auto_snap = ctk.CTkCheckBox(
-            self.card_sub_ctrl,
-            text="🔗 Tự động căn giữa vào vùng làm mờ",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            command=self._on_auto_snap_changed
-        )
-        if getattr(self.sub_style, "snap_to_blur", True):
-            self.chk_auto_snap.select()
-        else:
-            self.chk_auto_snap.deselect()
-        self.chk_auto_snap.pack(anchor="w", padx=12, pady=(2, 8))
-
         # Vị trí Margin V (Khoảng cách mép dưới)
         margin_header = ctk.CTkFrame(self.card_sub_ctrl, fg_color="transparent")
         margin_header.pack(fill="x", padx=12, pady=(2, 0))
@@ -400,7 +387,7 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
         ctk.CTkLabel(font_row, text="Cỡ chữ (Size):").grid(row=0, column=1, sticky="w")
         self.cmb_font_size = ctk.CTkComboBox(
             font_row,
-            values=["14", "16", "18", "20", "22", "24", "26", "28", "32", "36", "40"],
+            values=["16", "18", "20", "22", "24", "26", "28", "32", "36", "40", "44", "48", "54", "60"],
             command=self._on_font_size_changed
         )
         self.cmb_font_size.set(str(self.sub_style.font_size))
@@ -518,11 +505,6 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
         else:
             self.seg_alignment.set("⬇️ Dưới cùng")
 
-        if getattr(self.sub_style, "snap_to_blur", True):
-            self.chk_auto_snap.select()
-        else:
-            self.chk_auto_snap.deselect()
-
     def _on_mode_switched(self, val: str):
         if "Phụ Đề" in val:
             self.active_mode = "subtitle"
@@ -534,38 +516,10 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
             self.canvas.configure(cursor="crosshair")
         self._draw_canvas()
 
-    def _on_auto_snap_changed(self):
-        is_snap = bool(self.chk_auto_snap.get())
-        self.sub_style.snap_to_blur = is_snap
-        if is_snap:
-            self._snap_sub_to_blur()
-        self._draw_canvas()
-
-    def _snap_sub_to_blur(self):
-        """Tính Margin V để phụ đề nằm ngay giữa hộp làm mờ"""
-        if not self.orig_image:
-            return
-        orig_w, orig_h = self.orig_image.size
-        by = self.roi_y if self.roi_y is not None else int(orig_h * self.blur_region.y_ratio)
-        bh = self.roi_h if self.roi_h is not None else int(orig_h * self.blur_region.height_ratio)
-        font_sz = self.sub_style.font_size
-
-        calc_margin = int(orig_h - (by + bh) + max(0, (bh - font_sz) / 2))
-        calc_margin = max(10, min(calc_margin, orig_h - 20))
-
-        self.sub_style.margin_v = calc_margin
-        self.slider_margin_v.set(calc_margin)
-        self.lbl_margin_val.configure(text=f"{calc_margin}px")
-        self.seg_alignment.set("⬇️ Dưới cùng")
-        self.sub_style.alignment = 2
-
     def _on_margin_slider_changed(self, val: float):
         px = int(val)
         self.sub_style.margin_v = px
         self.lbl_margin_val.configure(text=f"{px}px")
-        # Khi người dùng chỉnh tay slider -> tắt auto snap
-        self.chk_auto_snap.deselect()
-        self.sub_style.snap_to_blur = False
         self._draw_canvas()
 
     def _on_alignment_changed(self, val: str):
@@ -575,8 +529,6 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
             self.sub_style.alignment = 8
         else:
             self.sub_style.alignment = 2
-        self.chk_auto_snap.deselect()
-        self.sub_style.snap_to_blur = False
         self._draw_canvas()
 
     def _on_font_changed(self, val: str):
@@ -586,8 +538,6 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
     def _on_font_size_changed(self, val: str):
         try:
             self.sub_style.font_size = int(val)
-            if self.chk_auto_snap.get():
-                self._snap_sub_to_blur()
             self._draw_canvas()
         except ValueError:
             pass
@@ -682,8 +632,6 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
         self.roi_y = int(h * 0.72)
         self.roi_w = w
         self.roi_h = int(h * 0.18)
-        if self.chk_auto_snap.get():
-            self._snap_sub_to_blur()
         self._draw_canvas()
 
     def _apply_top_preset(self):
@@ -694,8 +642,6 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
         self.roi_y = int(h * 0.06)
         self.roi_w = w
         self.roi_h = int(h * 0.14)
-        if self.chk_auto_snap.get():
-            self._snap_sub_to_blur()
         self._draw_canvas()
 
     def _apply_middle_preset(self):
@@ -706,8 +652,6 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
         self.roi_y = int(h * 0.44)
         self.roi_w = w
         self.roi_h = int(h * 0.16)
-        if self.chk_auto_snap.get():
-            self._snap_sub_to_blur()
         self._draw_canvas()
 
     def _on_mouse_down(self, event):
@@ -745,9 +689,6 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
             self.roi_w = int(w_disp / self.scale_factor)
             self.roi_h = int(h_disp / self.scale_factor)
 
-            if self.chk_auto_snap.get():
-                self._snap_sub_to_blur()
-
         else:
             # CHỈNH TAY PHỤ ĐỀ: Di chuyển vị trí phụ đề bằng chuột
             dy_disp = event.y - offset_y
@@ -767,10 +708,6 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
             self.sub_style.margin_v = new_margin
             self.slider_margin_v.set(new_margin)
             self.lbl_margin_val.configure(text=f"{new_margin}px")
-
-            # Tự động chuyển sang chế độ chỉnh tay độc lập
-            self.chk_auto_snap.deselect()
-            self.sub_style.snap_to_blur = False
 
         self._draw_canvas()
 
@@ -843,19 +780,24 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
             )
 
         # 3. Vẽ HỘP PHỤ ĐỀ TIẾNG VIỆT ĐƯỢC ĐỊNH VỊ CHÍNH XÁC (Màu Cyan / Kiểu Chữ Thật)
-        # Tính tọa độ Y của phụ đề trên video gốc
+        # Tính kích thước hiệu dụng và tọa độ Y của phụ đề trên video gốc
         sub_font_size = self.sub_style.font_size
         sub_margin_v = self.sub_style.margin_v
 
+        is_landscape = (orig_w >= orig_h)
+        base_h = 720.0 if is_landscape else 1280.0
+        font_multiplier = 1.45 if is_landscape else 1.75
+        effective_font_size = max(14, int(round(sub_font_size * (orig_h / base_h) * font_multiplier)))
+
         if self.sub_style.alignment == 8:
             # Top
-            sub_orig_y = sub_margin_v + sub_font_size // 2
+            sub_orig_y = sub_margin_v + effective_font_size // 2
         elif self.sub_style.alignment == 5:
             # Middle
             sub_orig_y = orig_h // 2
         else:
             # Bottom (mặc định)
-            sub_orig_y = orig_h - sub_margin_v - sub_font_size // 2
+            sub_orig_y = orig_h - sub_margin_v - effective_font_size // 2
 
         sub_disp_y = offset_y + int(sub_orig_y * self.scale_factor)
         sub_disp_x = offset_x + disp_w // 2
@@ -865,7 +807,7 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
         outline_hex = ass_to_hex(self.sub_style.outline_color, "#000000")
         bg_badge_hex = ass_to_hex(self.sub_style.back_color, "#000000")
         is_badge = (getattr(self.sub_style, "border_style", 1) == 3)
-        font_size_disp = max(11, min(36, int(sub_font_size * self.scale_factor)))
+        font_size_disp = max(12, min(48, int(effective_font_size * self.scale_factor)))
 
         text_to_draw = self.sample_text if self.sample_text.strip() else "[ Phụ đề Tiếng Việt ]"
         font_family = self.sub_style.font_name or "Georgia"

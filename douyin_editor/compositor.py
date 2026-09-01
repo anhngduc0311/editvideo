@@ -92,20 +92,21 @@ class VideoCompositor:
     def build_force_style_string(self, video_width: int = 1920, video_height: int = 1080, orig_width: Optional[int] = None, orig_height: Optional[int] = None) -> str:
         s = self.config.subtitle_style
         
-        # Tỉ lệ scale font chữ theo chiều cao canvas đích so với chuẩn base 720p
-        base_h = 720.0 if video_width >= video_height else 1280.0
-        scale_factor = video_height / base_h
-        scaled_font_size = max(12, int(round(s.font_size * scale_factor)))
-        scaled_outline_width = max(0.5, round(s.outline_width * scale_factor, 1))
-        scaled_shadow = max(0.0, round(s.shadow * scale_factor, 1))
-        scaled_margin_v = max(10, int(round(s.margin_v * scale_factor)))
+        # Tỉ lệ scale font chữ theo chiều cao canvas đích:
+        # Video ngang chuẩn 720p base_h = 720, hệ số font_multiplier = 1.45 để cỡ chữ 24-32 đạt 52-70px rõ nét trên Full HD 1080p
+        # Video dọc (TikTok/Douyin) base_h = 1280, hệ số font_multiplier = 1.75 để chữ to rõ trên màn hình điện thoại
+        is_landscape = video_width >= video_height
+        base_h = 720.0 if is_landscape else 1280.0
+        font_multiplier = 1.45 if is_landscape else 1.75
+
+        res_scale = video_height / base_h
+        scale_factor = res_scale * font_multiplier
+        scaled_font_size = max(14, int(round(s.font_size * scale_factor)))
+        scaled_outline_width = max(0.5, round(s.outline_width * res_scale, 1))
+        scaled_shadow = max(0.0, round(s.shadow * res_scale, 1))
+        scaled_margin_v = max(10, int(round(s.margin_v * res_scale)))
 
         margin_v = scaled_margin_v
-        # Tự động căn chỉnh chính xác phụ đề lọt vào giữa vùng làm mờ nếu vùng mờ đang bật
-        if getattr(s, "snap_to_blur", True) and self.config.blur_region.enabled:
-            _, by, _, bh = self.calculate_blur_box(video_width, video_height, orig_width, orig_height)
-            margin_v = int(video_height - (by + bh) + max(0, (bh - scaled_font_size) / 2))
-            margin_v = max(10, min(margin_v, video_height - 20))
 
         style_parts = [
             f"PlayResX={video_width}",

@@ -34,18 +34,29 @@ class SubtitleBurner:
 
     def build_force_style_string(self, video_width: int = 1280, video_height: int = 720) -> str:
         s = self.style
+        is_landscape = video_width >= video_height
+        base_h = 720.0 if is_landscape else 1280.0
+        font_multiplier = 1.45 if is_landscape else 1.75
+
+        res_scale = video_height / base_h
+        scale_factor = res_scale * font_multiplier
+        scaled_font_size = max(14, int(round(s.font_size * scale_factor)))
+        scaled_outline_width = max(0.5, round(s.outline_width * res_scale, 1))
+        scaled_shadow = max(0.0, round(s.shadow * res_scale, 1))
+        scaled_margin_v = max(10, int(round(s.margin_v * res_scale)))
+
         style_parts = [
             f"PlayResX={video_width}",
             f"PlayResY={video_height}",
             f"FontName={s.font_name}",
-            f"FontSize={s.font_size}",
+            f"FontSize={scaled_font_size}",
             f"PrimaryColour={s.primary_color}",
             f"OutlineColour={s.outline_color}",
             f"BackColour={s.back_color}",
             f"Bold={s.bold}",
-            f"Outline={s.outline_width}",
-            f"Shadow={s.shadow}",
-            f"MarginV={s.margin_v}",
+            f"Outline={scaled_outline_width}",
+            f"Shadow={scaled_shadow}",
+            f"MarginV={scaled_margin_v}",
             f"Alignment={s.alignment}",
             f"BorderStyle={getattr(s, 'border_style', 1)}"
         ]
