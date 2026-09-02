@@ -85,12 +85,16 @@ class DouyinAutoPipeline:
         douyin_url_or_text: str,
         custom_name: Optional[str] = None,
         progress_callback: Optional[Callable[[int, int, str, str], None]] = None,
-        interactive_roi_callback: Optional[Callable[[Path, BlurRegion, Optional[SubtitleStyle]], Tuple[BlurRegion, Optional[SubtitleStyle]]]] = None
+        interactive_roi_callback: Optional[Callable[[Path, BlurRegion, Optional[SubtitleStyle]], Tuple[BlurRegion, Optional[SubtitleStyle]]]] = None,
+        subtitles_callback: Optional[Callable[[dict], None]] = None,
+        review_subtitles_callback: Optional[Callable[[Path, Path], None]] = None
     ) -> Path:
         """
         Kích hoạt toàn bộ quy trình tự động.
         :param progress_callback: Hàm nhận (current_step, total_steps, step_name, log_message)
         :param interactive_roi_callback: Hàm mở Studio cho người dùng khoanh vùng mờ & chỉnh tay phụ đề trên video vừa tải
+        :param subtitles_callback: Hàm nhận dữ liệu cập nhật danh sách & thống kê phụ đề thời gian thực lên GUI
+        :param review_subtitles_callback: Hàm dừng lại chờ người dùng kiểm tra / duyệt phụ đề trước khi render
         """
         start_time = time.time()
         self.print_pipeline_banner(douyin_url_or_text)
@@ -178,12 +182,26 @@ class DouyinAutoPipeline:
                 bgm_track_path = None
                 whisper_audio_source = extracted_audio
 
-            notify(2, "Bước 2: Whisper Speech-to-Text", "Đang nhận diện giọng nói tiếng Trung sang file phụ đề SRT (trên track sạch)...")
-            console.print("[bold cyan]▶ BƯỚC 2 (tiếp): Whisper AI nhận diện giọng nói tiếng Trung trên track Vocals sạch -> SRT...[/bold cyan]")
-            self.transcriber.transcribe(
+            notify(2, "Bước 2: Local Speech-to-Text", "Đang nhận diện giọng nói tiếng Trung qua Local STT Engine (trên track sạch)...")
+            console.print("[bold cyan]▶ BƯỚC 2 (tiếp): Local STT nhận diện giọng nói tiếng Trung trên track Vocals sạch -> SRT...[/bold cyan]")
+            original_sub_items = self.transcriber.transcribe(
                 audio_path=whisper_audio_source,
                 output_srt=original_srt
             )
+            
+            # Tính toán thống kê tình trạng phụ đề
+            from transcriber import calculate_subtitle_stats
+            stt_stats = calculate_subtitle_stats(original_sub_items, total_duration=total_duration)
+            
+            if subtitles_callback:
+                subtitles_callback({
+                    "stage": "stt",
+                    "items": [item.to_dict() for item in original_sub_items],
+                    "stats": stt_stats,
+                    "original_srt": str(original_srt)
+                })
+
+            notify(2, "Bước 2: STT Hoàn Tất", f"Đã nhận diện {len(original_sub_items)} câu thoại ({stt_stats['status_badge']}).")
             overall_pbar.update(1)
 
             # ==========================================
@@ -197,6 +215,22 @@ class DouyinAutoPipeline:
                 input_srt_path=original_srt,
                 output_srt_path=raw_vietnamese_srt
             )
+
+            # Ghép phụ đề dịch vào danh sách gốc
+            for idx, vn_item in enumerate(raw_vn_subtitles):
+                if idx < len(original_sub_items):
+                    original_sub_items[idx].translated_text = vn_item.text
+
+            if subtitles_callback:
+                subtitles_callback({
+                    "stage": "translated",
+                    "items": [item.to_dict() for item in original_sub_items],
+                    "stats": stt_stats,
+                    "original_srt": str(original_srt),
+                    "translated_srt": str(raw_vietnamese_srt)
+                })
+
+            notify(3, f"Bước 3: Dịch {provider_title} Xong", f"Đã dịch {len(raw_vn_subtitles)} câu sang tiếng Việt chuẩn ngữ cảnh.")
             overall_pbar.update(1)
 
             # ==========================================
@@ -210,7 +244,37 @@ class DouyinAutoPipeline:
                 output_audio_path=tts_synced_audio,
                 output_srt_path=synced_vietnamese_srt
             )
+
+            if subtitles_callback:
+                # Cập nhật timeline đã sync
+                synced_items_data = []
+                for idx, syn_item in enumerate(synced_vn_subtitles):
+                    orig_text = original_sub_items[idx].text if idx < len(original_sub_items) else ""
+                    synced_items_data.append({
+                        "index": syn_item.index,
+                        "start_seconds": syn_item.start_seconds,
+                        "end_seconds": syn_item.end_seconds,
+                        "start_str": syn_item.start_str,
+                        "end_str": syn_item.end_str,
+                        "duration": round(syn_item.end_seconds - syn_item.start_seconds, 2),
+                        "text": orig_text,
+                        "translated_text": syn_item.text
+                    })
+                subtitles_callback({
+                    "stage": "synced",
+                    "items": synced_items_data,
+                    "stats": stt_stats,
+                    "original_srt": str(original_srt),
+                    "translated_srt": str(raw_vietnamese_srt),
+                    "synced_srt": str(synced_vietnamese_srt)
+                })
+
             overall_pbar.update(2)
+
+            # Tùy chọn dừng lại để người dùng duyệt / sửa phụ đề trên GUI
+            if review_subtitles_callback:
+                notify(5, "Bước 5: Kiểm tra & Duyệt Phụ đề", "Đang chờ bạn kiểm tra & xác nhận phụ đề trên giao diện GUI...")
+                review_subtitles_callback(session_work_dir, synced_vietnamese_srt if synced_vietnamese_srt.exists() else raw_vietnamese_srt)
 
             # ==========================================
             # BƯỚC 5, 6, 7 & 8: SINGLE-PASS MASTER RENDER (GỘP TẤT CẢ TRONG 1 LẦN RENDER DUY NHẤT)
