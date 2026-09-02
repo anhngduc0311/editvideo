@@ -83,7 +83,9 @@ class WhisperTranscriber:
             data = {
                 "model": model_name,
                 "response_format": "verbose_json",
-                "language": lang
+                "language": lang,
+                "temperature": "0.0",
+                "condition_on_previous_text": "false"
             }
             with tqdm(total=100, desc="[Bước 2.3] Docker Faster-Whisper STT", leave=False) as pbar:
                 resp = requests.post(endpoint, files=files, data=data, timeout=3600)
@@ -150,7 +152,10 @@ class WhisperTranscriber:
                 language=self.language,
                 task="transcribe",
                 verbose=False,
-                fp16=False
+                fp16=False,
+                condition_on_previous_text=False,
+                temperature=0.0,
+                no_speech_threshold=0.6
             )
             pbar.update(100)
 
@@ -430,6 +435,54 @@ class WhisperTranscriber:
 
         return subtitle_items
 
+    @staticmethod
+    def deduplicate_hallucinated_subtitles(items: List[SubtitleItem]) -> List[SubtitleItem]:
+        """
+        Loại bỏ các đoạn phụ đề bị lặp vô nghĩa do Whisper hallucination (lặp lại cùng 1 câu nhiều lần trên nền nhạc/im lặng).
+        Nếu 1 câu ngắn lặp lại liên tiếp >= 3 lần, tự động gộp thành 1 câu duy nhất với timeline chuẩn.
+        """
+        if not items:
+            return []
+
+        cleaned: List[SubtitleItem] = []
+        i = 0
+        while i < len(items):
+            cur_item = items[i]
+            cur_text = cur_item.text.strip()
+
+            # Đếm số lần lặp liên tiếp
+            repeat_group = [cur_item]
+            j = i + 1
+            while j < len(items):
+                next_text = items[j].text.strip()
+                if next_text == cur_text and len(cur_text) <= 20:
+                    repeat_group.append(items[j])
+                    j += 1
+                else:
+                    break
+
+            if len(repeat_group) >= 3:
+                # Phát hiện chuỗi lặp Whisper hallucination (ví dụ '全红家具' lặp nhiều lần)
+                logger.info(f"Đã phát hiện và làm sạch chuỗi lặp Whisper Hallucination ({len(repeat_group)} lần): '{cur_text}'")
+                merged_end = min(cur_item.start_seconds + 3.0, repeat_group[-1].end_seconds)
+                cleaned.append(
+                    SubtitleItem(
+                        index=len(cleaned) + 1,
+                        start_seconds=cur_item.start_seconds,
+                        end_seconds=merged_end,
+                        start_str=cur_item.start_str,
+                        end_str=WhisperTranscriber.format_timestamp(merged_end),
+                        text=cur_text
+                    )
+                )
+                i = j
+            else:
+                cur_item.index = len(cleaned) + 1
+                cleaned.append(cur_item)
+                i += 1
+
+        return cleaned
+
     def transcribe(self, audio_path: Path, output_srt: Path) -> List[SubtitleItem]:
         """Nhận diện giọng nói từ file audio và lưu ra file SRT"""
         audio_path = Path(audio_path).resolve()
@@ -476,6 +529,9 @@ class WhisperTranscriber:
                 "Bộ nhận diện giọng nói (Speech-to-Text) không tìm thấy câu thoại nào từ track âm thanh video! "
                 "Vui lòng kiểm tra lại link video hoặc đảm bảo video có giọng nói rõ ràng."
             )
+
+        # Lọc bỏ và làm sạch chuỗi lặp Whisper hallucination
+        items = self.deduplicate_hallucinated_subtitles(items)
 
         srt_blocks = [item.to_srt_block() for item in items]
         full_srt_text = "\n".join(srt_blocks).strip() + "\n"

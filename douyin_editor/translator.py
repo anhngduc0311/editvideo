@@ -48,15 +48,25 @@ def build_translation_system_instruction(config: PipelineConfig) -> str:
 
     return (
         "Bạn là chuyên gia biên dịch phụ đề video ngắn (Douyin/TikTok/YouTube Shorts) từ Tiếng Trung sang Tiếng Việt xuất sắc nhất.\n"
-        "Nhiệm vụ: Dịch toàn bộ nội dung trong đoạn phụ đề SRT sau sang tiếng Việt chuẩn, tự nhiên, cuốn hút, đúng ngữ cảnh chủ đề.\n\n"
+        "Nhiệm vụ: Dịch toàn bộ danh sách các câu phụ đề sau đây sang tiếng Việt chuẩn, tự nhiên, cuốn hút, đúng ngữ cảnh chủ đề.\n\n"
         f"{topic_context}\n\n"
         "QUY TẮC BẮT BUỘC:\n"
-        "1. BẢO TOÀN SỐ LƯỢNG CÂU 100% (TỶ LỆ 1:1 TUYỆT ĐỐI): Đầu vào có bao nhiêu câu/block SRT thì đầu ra PHẢI CÓ ĐÚNG BẤY NHIÊU CÂU/block SRT.\n"
-        "2. TUYỆT ĐỐI KHÔNG GỘP CÂU, KHÔNG TÁCH CÂU, KHÔNG BỎ SÓT CÂU: Mỗi câu gốc phải được dịch thành 1 câu tương ứng, giữ nguyên đúng số thứ tự (index) và timeline gốc.\n"
-        "3. DỊCH TỰ NHIÊN THEO TỪNG DÒNG: Dù câu gốc có thể là một cụm từ ngắn hoặc vế câu bị ngắt nhịp theo video (ví dụ: '并且', '但', '你看'), hãy dịch đúng và tự nhiên phần nghĩa của dòng đó để khớp timeline, tuyệt đối KHÔNG ĐƯỢC tự ý gom dòng đó vào câu trước hay câu sau.\n"
-        "4. ĐỘ DÀI VỪA PHẢI: Câu dịch tiếng Việt tự nhiên, giàu cảm xúc, súc tích, độ dài vừa phải để giọng đọc AI lồng tiếng kịp nhịp video.\n"
-        "5. GIỮ ĐỊNH DẠNG SRT: Mỗi block gồm số thứ tự, timeline '00:00:00,000 --> 00:00:00,000', câu dịch tiếng Việt, và 1 dòng trống cách nhau.\n"
-        "6. CHỈ TRẢ VỀ DUY NHẤT nội dung SRT hoàn chỉnh. Không thêm lời chào, không kèm giải thích, không bọc trong thẻ markdown ```."
+        "1. BẢO TOÀN SỐ LƯỢNG CÂU 100% (TỶ LỆ 1:1 TUYỆT ĐỐI): Đầu vào có bao nhiêu số [index] thì đầu ra PHẢI CÓ ĐÚNG BẤY NHIÊU DÒNG [index].\n"
+        "2. ĐỊNH DẠNG ĐẦU RA BẮT BUỘC: Mỗi dòng trả về đúng cú pháp: [index] <câu dịch tiếng Việt> (Ví dụ: [1] Xin chào các bạn).\n"
+        "3. TUYỆT ĐỐI KHÔNG GỘP CÂU, KHÔNG TÁCH CÂU, KHÔNG BỎ SÓT CÂU: Giữ nguyên đúng số thứ tự [index] gốc tương ứng.\n"
+        "4. VĂN PHONG TỰ NHIÊN, KHÔNG LẶP TỪ: Dịch thoát ý, súc tích để giọng đọc lồng tiếng kịp nhịp video. Nếu gặp các câu ngắn lặp lại liên tục (do lỗi nhận diện âm thanh), hãy dịch súc tích tự nhiên, tuyệt đối tránh lặp từ ngớ ngẩn.\n"
+        "5. CHỈ TRẢ VỀ DUY NHẤT danh sách các dòng [index] đã dịch. Không thêm lời chào, không kèm giải thích, không bọc trong thẻ markdown ```."
+    )
+
+
+def build_batch_prompt(batch: List[SubtitleItem]) -> str:
+    """Tạo prompt danh sách câu [index] tối ưu cho AI dịch chính xác 100% không lo lỗi format SRT"""
+    lines = [f"[{item.index}] {item.text.strip()}" for item in batch]
+    content = "\n".join(lines)
+    return (
+        f"[DANH SÁCH {len(batch)} CÂU PHỤ ĐỀ TIẾNG TRUNG CẦN DỊCH]:\n"
+        f"{content}\n\n"
+        f"Hãy dịch chính xác toàn bộ {len(batch)} câu trên sang Tiếng Việt, trả về đúng {len(batch)} dòng theo định dạng [index] <câu dịch>:"
     )
 
 
@@ -120,24 +130,24 @@ def extract_translations_from_ai_response(raw_text: str, batch: List[SubtitleIte
     """
     Trích xuất từ kết quả trả về của AI thành mapping {orig_index: translated_text}.
     Hỗ trợ đa định dạng chống mất câu:
-    1. Chuẩn SRT block (hỗ trợ -> và -->, period milliseconds, single newline, index 1. / [1] / 1)
-    2. Khớp Index gốc (ví dụ 46..60) hoặc Index tương đối theo batch (1..len(batch))
-    3. Danh sách có đánh số [1] hoặc 1. hoặc 1:
-    4. Danh sách dòng text thuần túy (Line-by-line fallback)
+    1. Định dạng chuẩn đánh số: [1] Text, (1) Text, 1. Text, 1: Text, 1 Text
+    2. Chuẩn SRT block (1\n00:00:00,000 --> 00:00:00,000\nText)
+    3. Fallback danh sách dòng thuần túy (Line-by-line)
     """
     text = clean_markdown_response(raw_text).replace("\r\n", "\n")
     expected_indices = [item.index for item in batch]
     expected_set = set(expected_indices)
     result_dict: Dict[int, str] = {}
 
-    # Cách 1: SRT block regex siêu linh hoạt
-    srt_pattern = re.compile(
-        r"(?:^|\n)\s*(\d+)[\.:]?\s*\n\s*(\d{1,2}:\d{2}:\d{2}[,\.]\d{1,3})\s*(?:-->|->)\s*(\d{1,2}:\d{2}:\d{2}[,\.]\d{1,3})\s*\n([\s\S]*?)(?=(?:\n\s*\d+[\.:]?\s*\n\s*\d{1,2}:\d{2}:\d{2})|\Z)"
-    )
-    for m in srt_pattern.finditer(text):
+    # Cách 1: Regex danh sách có đánh số [1] hoặc 1. hoặc 1: hoặc (1) hoặc [1]:
+    list_pattern = re.compile(r"(?:^|\n)\s*(?:\[|\()?(\d+)(?:\]|\)|\.|\:)?\s*[:\.\-\s]?\s*([^\n]+)")
+    for m in list_pattern.finditer(text):
         try:
             idx = int(m.group(1))
-            t_content = m.group(4).strip()
+            t_content = m.group(2).strip()
+            # Bỏ qua dòng timestamp nếu có
+            if "-->" in t_content or "->" in t_content:
+                continue
             t_content = " ".join(t_content.split())
             if not t_content:
                 continue
@@ -145,19 +155,20 @@ def extract_translations_from_ai_response(raw_text: str, batch: List[SubtitleIte
                 result_dict[idx] = t_content
             elif 1 <= idx <= len(batch):
                 orig_idx = batch[idx - 1].index
-                result_dict[orig_idx] = t_content
+                if orig_idx not in result_dict:
+                    result_dict[orig_idx] = t_content
         except (ValueError, IndexError):
             continue
 
-    # Cách 2: Nếu chưa đủ số lượng, thử regex danh sách có đánh số [1] hoặc 1. hoặc 1:
+    # Cách 2: SRT block regex (nếu AI trả về cả khối SRT)
     if len(result_dict) < len(batch):
-        list_pattern = re.compile(r"(?:^|\n)\s*(?:\[|\()?(\d+)(?:\]|\)|\.|\:)\s*([^\n]+)")
-        for m in list_pattern.finditer(text):
+        srt_pattern = re.compile(
+            r"(?:^|\n)\s*(\d+)[\.:]?\s*\n\s*(\d{1,2}:\d{2}:\d{2}[,\.]\d{1,3})\s*(?:-->|->)\s*(\d{1,2}:\d{2}:\d{2}[,\.]\d{1,3})\s*\n([\s\S]*?)(?=(?:\n\s*\d+[\.:]?\s*\n\s*\d{1,2}:\d{2}:\d{2})|\Z)"
+        )
+        for m in srt_pattern.finditer(text):
             try:
                 idx = int(m.group(1))
-                t_content = m.group(2).strip()
-                if "-->" in t_content or "->" in t_content:
-                    continue
+                t_content = m.group(4).strip()
                 t_content = " ".join(t_content.split())
                 if not t_content:
                     continue
@@ -189,14 +200,12 @@ def translate_batch_resilient(
     max_batch_retries: int = 2
 ) -> List[SubtitleItem]:
     """
-    Dịch một batch phụ đề với cơ chế tự sửa lỗi, tự bù câu thiếu và chống lệch timeline 100%.
+    Dịch một batch phụ đề với cơ chế chia nhỏ đệ quy, tự sửa lỗi, tự bù câu thiếu và chống lệch timeline 100%.
     """
     if not batch:
         return []
 
-    batch_srt_chunk = "\n\n".join([item.to_srt_block().strip() for item in batch])
-    prompt = f"[DỮ LIỆU PHỤ ĐỀ TIẾNG TRUNG]:\n{batch_srt_chunk}"
-
+    prompt = build_batch_prompt(batch)
     trans_map: Dict[int, str] = {}
 
     # Lần gọi chính thức đầu tiên
@@ -206,44 +215,45 @@ def translate_batch_resilient(
     except Exception as e:
         logger.warning(f"Lỗi khi gọi {engine_name} dịch batch {b_idx}/{total_batches}: {e}")
 
-    # Nếu AI trả về thiếu câu (ví dụ 14/15 câu), tự động Retry với lời nhắc nghiêm ngặt
+    # Nếu AI trả về thiếu câu, tự động thử lại / chia nhỏ sub-chunk
     retry_count = 0
     while len(trans_map) < len(batch) and retry_count < max_batch_retries:
         retry_count += 1
-        missing_indices = [item.index for item in batch if item.index not in trans_map]
+        missing_items = [item for item in batch if item.index not in trans_map]
         logger.warning(
-            f"Batch {b_idx}/{total_batches}: {engine_name} trả về {len(trans_map)}/{len(batch)} câu (thiếu {len(missing_indices)} câu: {missing_indices}). "
-            f"Đang tự động yêu cầu {engine_name} dịch lại đủ {len(batch)} câu (lần thử {retry_count}/{max_batch_retries})..."
+            f"Batch {b_idx}/{total_batches}: {engine_name} trả về {len(trans_map)}/{len(batch)} câu (thiếu {len(missing_items)} câu: {[it.index for it in missing_items]}). "
+            f"Đang tự động chia nhỏ đoạn và yêu cầu {engine_name} dịch lại (lần {retry_count}/{max_batch_retries})..."
         )
+        
+        # Gửi lại đúng các câu bị thiếu
         retry_prompt = (
-            f"⚠️ LƯU Ý BẮT BUỘC: Lần trước bạn đã trả về thiếu câu ({len(trans_map)}/{len(batch)} câu).\n"
-            f"Yêu cầu: Dịch lại ĐẦY ĐỦ CHÍNH XÁC {len(batch)} câu phụ đề sau đây, giữ nguyên đúng {len(batch)} block SRT "
-            f"với số thứ tự từ {batch[0].index} đến {batch[-1].index}, tuyệt đối KHÔNG GỘP CÂU và KHÔNG BỎ SÓT CÂU NÀO:\n\n"
-            f"{batch_srt_chunk}"
+            f"⚠️ LƯU Ý: Vui lòng dịch ĐẦY ĐỦ các câu sau đây sang Tiếng Việt. "
+            f"Bắt buộc trả về đúng từng dòng theo định dạng [index] <câu dịch>:\n\n"
+            f"{build_batch_prompt(missing_items)}"
         )
         try:
             retry_res = call_ai_fn(retry_prompt)
-            new_map = extract_translations_from_ai_response(retry_res, batch)
+            new_map = extract_translations_from_ai_response(retry_res, missing_items)
             trans_map.update(new_map)
             if len(trans_map) == len(batch):
-                logger.info(f"🟢 Batch {b_idx}/{total_batches}: Đã tự động sửa lỗi và nhận đủ {len(batch)}/{len(batch)} câu dịch!")
+                logger.info(f"🟢 Batch {b_idx}/{total_batches}: Đã bù đủ {len(batch)}/{len(batch)} câu dịch!")
                 break
         except Exception as e:
             logger.warning(f"Lỗi khi thử lại batch {b_idx}: {e}")
 
-    # Nếu sau các lần retry vẫn còn sót 1-2 câu cụ thể, dịch bổ sung đúng các câu bị thiếu (micro-call)
+    # Nếu sau các lần retry vẫn còn sót câu, dịch riêng từng câu lẻ (1-by-1 micro-calls)
     missing_items = [item for item in batch if item.index not in trans_map]
     if missing_items:
-        logger.warning(f"Batch {b_idx}/{total_batches}: Đang dịch bổ sung riêng {len(missing_items)} câu chưa có bản dịch...")
+        logger.warning(f"Batch {b_idx}/{total_batches}: Đang dịch bù riêng lẻ {len(missing_items)} câu chưa có bản dịch...")
         for m_item in missing_items:
             try:
                 single_prompt = (
-                    f"Dịch câu phụ đề video sau đây từ Tiếng Trung sang Tiếng Việt tự nhiên (chỉ trả về duy nhất 1 dòng câu dịch tiếng Việt, không kèm giải thích):\n"
-                    f"{m_item.text}"
+                    f"Dịch câu sau từ Tiếng Trung sang Tiếng Việt tự nhiên (chỉ trả về duy nhất 1 dòng bản dịch tiếng Việt):\n"
+                    f"[{m_item.index}] {m_item.text}"
                 )
                 single_res = call_ai_fn(single_prompt)
                 clean_single = clean_markdown_response(single_res).strip()
-                clean_single = re.sub(r"^(?:\d+[\.:]?\s*|\(?\[?\d+\]?\)?\s*)", "", clean_single).strip()
+                clean_single = re.sub(r"^(?:\d+[\.:]?\s*|\(?\[?\d+\]?\)?\s*[:\.\-\s]?)", "", clean_single).strip()
                 clean_single = " ".join(clean_single.split())
                 if clean_single:
                     trans_map[m_item.index] = clean_single
@@ -918,15 +928,14 @@ class ChatGPTWebTranslator:
             return []
 
         total_items = len(original_items)
-        logger.info(f"[Bước 3] Đang dịch {total_items} câu phụ đề bằng ChatGPT Web ({self.model_name})...")
-
-        BATCH_SIZE = 15
-        batches = [original_items[i:i + BATCH_SIZE] for i in range(0, total_items, BATCH_SIZE)]
+        batch_size = int(getattr(self.config, "chatgpt_batch_size", 12) or 12)
+        batches = [original_items[i:i + batch_size] for i in range(0, total_items, batch_size)]
         total_batches = len(batches)
+        logger.info(f"[Bước 3] Đang dịch {total_items} câu phụ đề bằng ChatGPT Web ({self.model_name}) - Chia {total_batches} đoạn ({batch_size} câu/đoạn)...")
 
         final_translated_items: List[SubtitleItem] = []
 
-        with tqdm(total=total_items, desc="[Bước 3] ChatGPT Dịch thuật SRT", leave=False) as pbar:
+        with tqdm(total=total_items, desc="[Bước 3] ChatGPT Dịch thuật SRT (Chia Đoạn)", leave=False) as pbar:
             for b_idx, batch in enumerate(batches, 1):
                 batch_res = translate_batch_resilient(
                     call_ai_fn=lambda p: self._call_chatgpt_web(p, timeout=120),
