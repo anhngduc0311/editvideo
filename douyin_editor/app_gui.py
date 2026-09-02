@@ -92,6 +92,7 @@ class DouyinEditorApp(ctk.CTk):
         self.saved_smart_blur = True
         self.saved_auto_switch_sub = True
         self.saved_review_sub = False
+        self.saved_topic_preset = "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)"
         if CONFIG_FILE.exists():
             try:
                 data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
@@ -111,6 +112,7 @@ class DouyinEditorApp(ctk.CTk):
                 self.saved_smart_blur = data.get("smart_blur", True)
                 self.saved_auto_switch_sub = data.get("auto_switch_sub", True)
                 self.saved_review_sub = data.get("review_sub", False)
+                self.saved_topic_preset = data.get("topic_preset", "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)")
             except Exception:
                 pass
 
@@ -141,6 +143,7 @@ class DouyinEditorApp(ctk.CTk):
                 "smart_blur": bool(self.chk_smart_blur.get()) if hasattr(self, "chk_smart_blur") else True,
                 "auto_switch_sub": bool(self.chk_auto_switch_sub.get()) if hasattr(self, "chk_auto_switch_sub") else True,
                 "review_sub": bool(self.chk_review_sub.get()) if hasattr(self, "chk_review_sub") else False,
+                "topic_preset": self.cmb_topic.get() if hasattr(self, "cmb_topic") else "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)",
             }
             CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
@@ -404,14 +407,15 @@ class DouyinEditorApp(ctk.CTk):
         self.cmb_topic = ctk.CTkComboBox(
             topic_row,
             values=[
+                "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)",
                 "🎮 Minecraft cho Trẻ Em (Vui nhộn, chuẩn gamer nhí)",
                 "🕹️ Game & Esports Tổng Hợp (Kịch tính, hài hước)",
                 "✨ Hài Hước / Giải Trí Đời Sống (Tự nhiên, dí dỏm)",
                 "🌐 Đa Dụng / Tiêu Chuẩn (Chuẩn mực, súc tích)"
             ],
-            width=320
+            width=360
         )
-        self.cmb_topic.set("🎮 Minecraft cho Trẻ Em (Vui nhộn, chuẩn gamer nhí)")
+        self.cmb_topic.set(getattr(self, "saved_topic_preset", "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)"))
         self.cmb_topic.pack(side="left")
 
         # 4. Card Tùy chọn Xử lý Video (Speed & Blur ROI)
@@ -1777,11 +1781,13 @@ class DouyinEditorApp(ctk.CTk):
         elif "HQ" in sep_speed_val or "75%" in sep_speed_val:
             sep_speed_code = "hq"
 
-        topic_val = self.cmb_topic.get() if hasattr(self, "cmb_topic") else "minecraft_kids"
-        topic_code = "minecraft_kids"
-        if "Minecraft" in topic_val:
+        topic_val = self.cmb_topic.get() if hasattr(self, "cmb_topic") else "100"
+        topic_code = "minecraft_100_days_hardcore"
+        if "100" in topic_val or "Hardcore" in topic_val:
+            topic_code = "minecraft_100_days_hardcore"
+        elif "Trẻ Em" in topic_val or "nhí" in topic_val:
             topic_code = "minecraft_kids"
-        elif "Game" in topic_val:
+        elif "Game" in topic_val or "Esports" in topic_val:
             topic_code = "gaming_general"
         elif "Hài Hước" in topic_val:
             topic_code = "comedy_entertainment"

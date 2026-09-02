@@ -434,6 +434,62 @@ class TTSConfig:
 
 
 TRANSLATION_TOPIC_PRESETS = {
+    "minecraft_100_days_hardcore": {
+        "id": "minecraft_100_days_hardcore",
+        "name": "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)",
+        "description": "Chuyên biệt cho series Thử Thách 100 Ngày Hardcore trong Minecraft. Nhấn mạnh sự sống còn, nhịp độ dồn dập, thuật ngữ timeline 100 ngày, kịch tính từng giây.",
+        "prompt_context": (
+            "CHỦ ĐỀ & BỐI CẢNH ĐẶC BIỆT: THỬ THÁCH SINH TỒN 100 NGÀY HARDCORE TRONG MINECRAFT (100 DAYS HARDCORE MINECRAFT CHALLENGE).\n\n"
+            "1. TÍNH CHẤT BỐI CẢNH & PHONG CÁCH DIỄN ĐẠT:\n"
+            "- Chế độ Hardcore chỉ có DUY NHẤT 1 MẠNG. Chết là thế giới bị xóa vĩnh viễn, mất trắng toàn bộ công sức.\n"
+            "- Giọng điệu: Hồi hộp, kịch tính, dồn dập, căng thẳng, tràn đầy năng lượng, cuốn hút như một bộ phim sinh tồn nghẹt thở.\n"
+            "- Xưng hô chuẩn gamer/streamer Việt: 'mình / các bạn' hoặc 'tôi / anh em', tạo cảm giác phiêu lưu và gắn kết.\n"
+            "- Nhấn mạnh các mốc thời gian sống còn: 'Ngày 1...', 'Ngày thứ 10...', 'Ngày 50...', 'Đến ngày 100...'.\n\n"
+            "2. BỘ TỪ ĐIỂN THUẬT NGỮ CHUYÊN SÂU CHO MINECRAFT 100 NGÀY HARDCORE:\n"
+            "  • Mốc thời gian & Chế độ chơi:\n"
+            "    - 第1天 / 第X天 / 第100天 -> Ngày 1 / Ngày thứ X / Ngày thứ 100\n"
+            "    - 极限模式 / 极限生存 / 硬核模式 -> Chế độ Hardcore / Sinh tồn Hardcore (1 mạng duy nhất)\n"
+            "    - 一命通关 -> Phá đảo 1 mạng duy nhất\n"
+            "    - 毕业 / 毕业套 -> Tốt nghiệp / Đạt full bộ trang bị cuối (Max Option)\n"
+            "    - 锁血 / 残血 / 丝血 -> Hút chết / Còn đúng nửa tim / Máu đỏ nguy kịch\n"
+            "    - 暴毙 / 翻车 -> Bay màu / Toang đời / Hẹo lãng xẹt\n"
+            "    - 落地水 -> Pha tiếp đất bằng xô nước cứu mạng (MLG Water drop clutch)\n\n"
+            "  • Quái vật, Trùm & Mối đe dọa sinh tử:\n"
+            "    - 监守者 / 潜声守卫 -> Quái vật Warden (Quái bóng tối one-hit)\n"
+            "    - 凋灵 -> Trùm Wither (Wither 3 đầu)\n"
+            "    - 末影龙 -> Rồng Ender (Ender Dragon - Boss cuối The End)\n"
+            "    - 苦力怕 / 爬行者 / 高压苦力怕 -> Creeper (Quái nổ) / Creeper tích điện (Siêu quái nổ)\n"
+            "    - 末影人 / 小黑 -> Enderman\n"
+            "    - 烈焰人 -> Quái lửa Blaze\n"
+            "    - 凋灵骷髅 -> Skeleton Wither (Bộ xương đen địa ngục)\n"
+            "    - 猪灵 / 猪灵蛮兵 -> Piglin / Piglin Brute (Chiến binh heo cực trâu)\n"
+            "    - 劫掠 / 突袭 / 灾厄村民 -> Cuộc đột kích Raid / Kẻ cướp Pillager\n"
+            "    - 潜影贝 -> Quái Shulker (Bắn bay lên trời)\n"
+            "    - 溺尸 (带三叉戟) -> Drowned cầm Đinh ba (Zombie phóng lao)\n\n"
+            "  • Trang bị, Bùa hộ mệnh & Vật phẩm tối thượng:\n"
+            "    - 不死图腾 / 图腾 -> Totem bất tử (Bùa hộ mệnh cứu sống)\n"
+            "    - 附魔金苹果 / 附魔金头 -> Táo vàng phù phép / Táo Notch thần thánh\n"
+            "    - 下界合金 / 狱髓 -> Netherite / Hợp kim Netherite\n"
+            "    - 鞘翅 -> Cánh cứng Elytra\n"
+            "    - 潜影盒 / 潜影箱 -> Hộp Shulker (Túi thần kỳ mang cả thế giới)\n"
+            "    - 信标 -> Đèn Hải đăng Beacon (Tăng tốc độ đào và hồi máu)\n"
+            "    - 经验修补 -> Bùa Tu sửa Mending (Dùng EXP sửa đồ)\n"
+            "    - 保护IV / 锋利V / 效率V -> Bảo vệ 4 / Sắc bén 5 / Hiệu suất 5\n"
+            "    - 药水 / 抗火药水 / 力量药水 -> Thuốc kháng lửa / Thuốc tăng lực\n"
+            "    - 末影珍珠 / 瞬移 -> Ngọc Ender (Dịch chuyển tức thời thoát chết)\n\n"
+            "  • Công trình, Chiều không gian & Hệ thống Farm:\n"
+            "    - 主世界 / 下界 (地狱) / 末地 -> Overworld (Thế giới thực) / Nether (Địa ngục) / The End (Vùng đất Ender)\n"
+            "    - 堡垒遗迹 / 猪灵堡垒 -> Pháo đài Bastion (Căn cứ Piglin)\n"
+            "    - 下界要塞 -> Pháo đài Nether\n"
+            "    - 末地城 / 末地船 -> Thành phố Ender / Tàu Ender\n"
+            "    - 古代城市 / 深暗之域 -> Thành phố cổ Ancient City (Lãnh địa Warden)\n"
+            "    - 刷怪塔 / 刷铁机 / 刷金塔 / 突袭塔 -> Tháp farm quái / Máy farm sắt / Farm vàng / Tháp farm Raid\n"
+            "    - 庇护所 / 基地 -> Căn cứ trú ẩn / Siêu căn cứ Mega Base\n\n"
+            "3. QUY TẮC DỊCH THUẬT & ĐỘ DÀI:\n"
+            "- Dịch ngắn gọn, dứt khoát, dùng các từ hành động mạnh (như 'quét sạch', 'tấn công', 'thoát chết gang tấc', 'nâng cấp tối thượng').\n"
+            "- Độ dài câu phải vừa vặn để giọng đọc AI CapCut khớp chuẩn với video mà không bị nhanh quá hay chậm quá."
+        )
+    },
     "minecraft_kids": {
         "id": "minecraft_kids",
         "name": "🎮 Minecraft cho Trẻ Em (Vui nhộn, chuẩn gamer nhí)",
