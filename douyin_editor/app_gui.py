@@ -96,6 +96,7 @@ class DouyinEditorApp(ctk.CTk):
         self.saved_blur_y_ratio = 0.718
         self.saved_blur_height_ratio = 0.0694
         self.saved_topic_preset = "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)"
+        self.saved_custom_prompt = ""
         if CONFIG_FILE.exists():
             try:
                 data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
@@ -121,6 +122,7 @@ class DouyinEditorApp(ctk.CTk):
                 self.saved_blur_y_ratio = float(data.get("blur_y_ratio", 0.718))
                 self.saved_blur_height_ratio = float(data.get("blur_height_ratio", 0.0694))
                 self.saved_topic_preset = data.get("topic_preset", "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)")
+                self.saved_custom_prompt = data.get("custom_translation_prompt", "")
             except Exception:
                 pass
 
@@ -144,6 +146,7 @@ class DouyinEditorApp(ctk.CTk):
             font_name_val = self.cmb_font.get() if hasattr(self, "cmb_font") else getattr(self, "saved_font_name", "Montserrat")
             font_size_val = self.cmb_font_size.get() if hasattr(self, "cmb_font_size") else getattr(self, "saved_font_size", "22")
             margin_v_val = str(int(self.slider_margin_v.get())) if hasattr(self, "slider_margin_v") else getattr(self, "saved_margin_v", "160")
+            custom_prompt_val = self.custom_prompt_textbox.get("1.0", "end").strip() if hasattr(self, "custom_prompt_textbox") else getattr(self, "saved_custom_prompt", "")
 
             data = {
                 "llm_provider": current_provider,
@@ -168,6 +171,7 @@ class DouyinEditorApp(ctk.CTk):
                 "blur_y_ratio": by_r,
                 "blur_height_ratio": bh_r,
                 "topic_preset": self.cmb_topic.get() if hasattr(self, "cmb_topic") else "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)",
+                "custom_translation_prompt": custom_prompt_val,
             }
             CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
@@ -425,22 +429,97 @@ class DouyinEditorApp(ctk.CTk):
 
         # Translation Topic / Context Row
         topic_row = ctk.CTkFrame(key_card, fg_color="transparent")
-        topic_row.pack(fill="x", padx=12, pady=(4, 10))
-        ctk.CTkLabel(topic_row, text="🎯 Chủ đề / Ngữ cảnh dịch:", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=(0, 8))
+        topic_row.pack(fill="x", padx=12, pady=(4, 4))
+        ctk.CTkLabel(topic_row, text="🎯 Chủ đề cốt truyện:", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=(0, 8))
+
+        topic_names = [
+            "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)",
+            "🎮 Minecraft Phiêu Lưu & Troll Bựa Thiếu Nhi (Vui nhộn, chuẩn gamer nhí)",
+            "🎬 Tóm Tắt & Review Phim / Hoạt Hình / Anime (Cuốn hút, giữ chân người xem)",
+            "🎭 Drama / Kể Chuyện Cuộc Sống / Bắt Trend Douyin (Dí dỏm, viral cực mạnh)",
+            "🕹️ Game & Esports Tổng Hợp (Liên Quân, Roblox, Free Fire, Highlight đỉnh cao)",
+            "🕵️ Kinh Dị / Trinh Thám / Bí Ẩn Rùng Rợn / Kỳ Án (Hồi hộp, nghẹt thở)",
+            "💡 Khoa Học / Fact Thú Vị / Khám Phá Kỳ Thú (Tò mò, hấp dẫn)",
+            "👑 Cổ Trang / Tu Tiên / Kiếm Hiệp Huyền Huyễn (Hào sảng, khí chất)",
+            "🌐 Kể Chuyện & Thuyết Minh Viral Tổng Hợp (Dẫn dắt cảm xúc, chuẩn TikTok/Reels)"
+        ]
 
         self.cmb_topic = ctk.CTkComboBox(
             topic_row,
-            values=[
-                "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)",
-                "🎮 Minecraft cho Trẻ Em (Vui nhộn, chuẩn gamer nhí)",
-                "🕹️ Game & Esports Tổng Hợp (Kịch tính, hài hước)",
-                "✨ Hài Hước / Giải Trí Đời Sống (Tự nhiên, dí dỏm)",
-                "🌐 Đa Dụng / Tiêu Chuẩn (Chuẩn mực, súc tích)"
-            ],
-            width=360
+            values=topic_names,
+            width=380,
+            command=lambda _: self._save_settings()
         )
-        self.cmb_topic.set(getattr(self, "saved_topic_preset", "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)"))
+        saved_topic = getattr(self, "saved_topic_preset", topic_names[0])
+        if saved_topic not in topic_names:
+            for tn in topic_names:
+                if "100" in saved_topic and "100" in tn:
+                    saved_topic = tn
+                    break
+                elif "Trẻ Em" in saved_topic and "Thiếu Nhi" in tn:
+                    saved_topic = tn
+                    break
+                elif "Hài Hước" in saved_topic and "Drama" in tn:
+                    saved_topic = tn
+                    break
+            else:
+                saved_topic = topic_names[0]
+        self.cmb_topic.set(saved_topic)
         self.cmb_topic.pack(side="left")
+
+        # Khung tùy chỉnh Lời Nhắc / Nhân vật đặc thù
+        custom_prompt_header = ctk.CTkFrame(key_card, fg_color="transparent")
+        custom_prompt_header.pack(fill="x", padx=12, pady=(4, 2))
+        ctk.CTkLabel(
+            custom_prompt_header,
+            text="📝 Lời nhắc cốt truyện / Ghi chú nhân vật riêng (Tùy chọn nâng cao):",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#38bdf8"
+        ).pack(side="left")
+
+        # Nút gắn nhanh phong cách biên kịch viral
+        quick_style_row = ctk.CTkFrame(key_card, fg_color="transparent")
+        quick_style_row.pack(fill="x", padx=12, pady=(1, 2))
+
+        def _insert_quick_style(style_desc: str):
+            curr = self.custom_prompt_textbox.get("1.0", "end").strip()
+            if curr:
+                new_t = f"{curr}\n- {style_desc}"
+            else:
+                new_t = style_desc
+            self.custom_prompt_textbox.delete("1.0", "end")
+            self.custom_prompt_textbox.insert("1.0", new_t)
+            self._save_settings()
+
+        btn_st1 = ctk.CTkButton(quick_style_row, text="🔥 Kịch tính", width=75, height=22, font=ctk.CTkFont(size=10),
+                                fg_color="#ef4444", hover_color="#dc2626",
+                                command=lambda: _insert_quick_style("Tập trung đẩy cao trào kịch tính, nhấn mạnh tình huống gay cấn và màn lật kèo bất ngờ."))
+        btn_st1.pack(side="left", padx=(0, 4))
+
+        btn_st2 = ctk.CTkButton(quick_style_row, text="😂 Hài hước", width=75, height=22, font=ctk.CTkFont(size=10),
+                                fg_color="#f59e0b", hover_color="#d97706",
+                                command=lambda: _insert_quick_style("Văn phong dí dỏm, châm biếm hài hước, dùng tiếng lóng mạng bắt trend cực chất."))
+        btn_st2.pack(side="left", padx=(0, 4))
+
+        btn_st3 = ctk.CTkButton(quick_style_row, text="🎬 Review phim", width=85, height=22, font=ctk.CTkFont(size=10),
+                                fg_color="#8b5cf6", hover_color="#7c3aed",
+                                command=lambda: _insert_quick_style("Giọng kể chuyện review phim lôi cuốn, xưng anh ta/cô ấy/hắn, tạo bí ẩn giữ chân người xem."))
+        btn_st3.pack(side="left", padx=(0, 4))
+
+        btn_st4 = ctk.CTkButton(quick_style_row, text="🕵️ Bí ẩn", width=65, height=22, font=ctk.CTkFont(size=10),
+                                fg_color="#06b6d4", hover_color="#0891b2",
+                                command=lambda: _insert_quick_style("Không khí u ám, hồi hộp nghẹt thở, ngắt nhịp rùng rợn khơi gợi tò mò."))
+        btn_st4.pack(side="left", padx=(0, 4))
+
+        btn_clear_st = ctk.CTkButton(quick_style_row, text="🗑 Xóa", width=50, height=22, font=ctk.CTkFont(size=10),
+                                     fg_color="#4b5563", hover_color="#374151",
+                                     command=lambda: [self.custom_prompt_textbox.delete("1.0", "end"), self._save_settings()])
+        btn_clear_st.pack(side="left")
+
+        self.custom_prompt_textbox = ctk.CTkTextbox(key_card, height=45, font=ctk.CTkFont(size=11))
+        self.custom_prompt_textbox.pack(fill="x", padx=12, pady=(2, 8))
+        if getattr(self, "saved_custom_prompt", ""):
+            self.custom_prompt_textbox.insert("1.0", self.saved_custom_prompt)
 
         # 4. Card Tùy chọn Xử lý Video (Speed & Blur ROI)
         video_card = ctk.CTkFrame(left_scroll, corner_radius=8)
@@ -1495,18 +1574,33 @@ class DouyinEditorApp(ctk.CTk):
         elif "HQ" in sep_speed_val or "75%" in sep_speed_val:
             sep_speed_code = "hq"
 
-        topic_val = self.cmb_topic.get() if hasattr(self, "cmb_topic") else "100"
-        topic_code = "minecraft_100_days_hardcore"
-        if "100" in topic_val or "Hardcore" in topic_val:
-            topic_code = "minecraft_100_days_hardcore"
-        elif "Trẻ Em" in topic_val or "nhí" in topic_val:
-            topic_code = "minecraft_kids"
-        elif "Game" in topic_val or "Esports" in topic_val:
-            topic_code = "gaming_general"
-        elif "Hài Hước" in topic_val:
-            topic_code = "comedy_entertainment"
+        topic_val = self.cmb_topic.get() if hasattr(self, "cmb_topic") else ""
+        topic_code = "general_storytelling"
+        for tid, tinfo in TRANSLATION_TOPIC_PRESETS.items():
+            if tinfo.get("name") == topic_val or tid == topic_val:
+                topic_code = tid
+                break
         else:
-            topic_code = "general"
+            if "100" in topic_val or "Hardcore" in topic_val:
+                topic_code = "minecraft_100_days_hardcore"
+            elif "Trẻ Em" in topic_val or "nhí" in topic_val or "Thiếu Nhi" in topic_val:
+                topic_code = "minecraft_kids"
+            elif "Review" in topic_val or "Phim" in topic_val or "Anime" in topic_val:
+                topic_code = "movie_anime_recap"
+            elif "Drama" in topic_val or "Hài Hước" in topic_val:
+                topic_code = "comedy_drama_trend"
+            elif "Esports" in topic_val or "Game" in topic_val:
+                topic_code = "gaming_esports"
+            elif "Kinh Dị" in topic_val or "Trinh Thám" in topic_val or "Bí Ẩn" in topic_val:
+                topic_code = "horror_mystery_investigation"
+            elif "Khoa Học" in topic_val or "Fact" in topic_val:
+                topic_code = "science_discovery_facts"
+            elif "Tu Tiên" in topic_val or "Cổ Trang" in topic_val:
+                topic_code = "historical_cultivation"
+            else:
+                topic_code = "general_storytelling"
+
+        custom_prompt_text = self.custom_prompt_textbox.get("1.0", "end").strip() if hasattr(self, "custom_prompt_textbox") else ""
 
         res_val = self.cmb_export_res.get() if hasattr(self, "cmb_export_res") else "1080p"
         res_code = "1080p"
@@ -1526,6 +1620,7 @@ class DouyinEditorApp(ctk.CTk):
             chatgpt_cookie=chatgpt_cookie_val,
             chatgpt_model_name=chatgpt_model_val,
             topic_preset=topic_code,
+            custom_translation_prompt=custom_prompt_text if custom_prompt_text else None,
             speed_factor=speed_factor,
             final_speed=final_speed,
             export_resolution=res_code,

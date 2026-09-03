@@ -437,13 +437,14 @@ TRANSLATION_TOPIC_PRESETS = {
     "minecraft_100_days_hardcore": {
         "id": "minecraft_100_days_hardcore",
         "name": "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)",
-        "description": "Chuyên biệt cho series Thử Thách 100 Ngày Hardcore trong Minecraft. Nhấn mạnh sự sống còn, nhịp độ dồn dập, thuật ngữ timeline 100 ngày, kịch tính từng giây.",
+        "description": "Chuyên biệt cho series Thử Thách 100 Ngày Hardcore. Nhấn mạnh sự sống còn, nhịp độ dồn dập, thuật ngữ timeline 100 ngày, kịch tính từng giây.",
         "prompt_context": (
             "CHỦ ĐỀ & BỐI CẢNH ĐẶC BIỆT: THỬ THÁCH SINH TỒN 100 NGÀY HARDCORE TRONG MINECRAFT (100 DAYS HARDCORE MINECRAFT CHALLENGE).\n\n"
-            "1. TÍNH CHẤT BỐI CẢNH & PHONG CÁCH DIỄN ĐẠT:\n"
+            "1. TÍNH CHẤT BỐI CẢNH & NGHỆ THUẬT BIÊN KỊCH CỐT TRUYỆN:\n"
             "- Chế độ Hardcore chỉ có DUY NHẤT 1 MẠNG. Chết là thế giới bị xóa vĩnh viễn, mất trắng toàn bộ công sức.\n"
             "- Giọng điệu: Hồi hộp, kịch tính, dồn dập, căng thẳng, tràn đầy năng lượng, cuốn hút như một bộ phim sinh tồn nghẹt thở.\n"
-            "- Xưng hô chuẩn gamer/streamer Việt: 'mình / các bạn' hoặc 'tôi / anh em', tạo cảm giác phiêu lưu và gắn kết.\n"
+            "- Hook mở màn (3s đầu): Phải kích thích tò mò và đẩy cao trào ngay lập tức ('Liệu mình có thể sống sót qua 100 ngày địa ngục này không? Hãy cùng xem nhé!').\n"
+            "- Xưng hô chuẩn streamer sinh tồn: 'mình / các bạn' hoặc 'tôi / anh em', tạo cảm giác phiêu lưu và gắn kết.\n"
             "- Nhấn mạnh các mốc thời gian sống còn: 'Ngày 1...', 'Ngày thứ 10...', 'Ngày 50...', 'Đến ngày 100...'.\n\n"
             "2. BỘ TỪ ĐIỂN THUẬT NGỮ CHUYÊN SÂU CHO MINECRAFT 100 NGÀY HARDCORE:\n"
             "  • Mốc thời gian & Chế độ chơi:\n"
@@ -484,89 +485,167 @@ TRANSLATION_TOPIC_PRESETS = {
             "    - 末地城 / 末地船 -> Thành phố Ender / Tàu Ender\n"
             "    - 古代城市 / 深暗之域 -> Thành phố cổ Ancient City (Lãnh địa Warden)\n"
             "    - 刷怪塔 / 刷铁机 / 刷金塔 / 突袭塔 -> Tháp farm quái / Máy farm sắt / Farm vàng / Tháp farm Raid\n"
-            "    - 庇护所 / 基地 -> Căn cứ trú ẩn / Siêu căn cứ Mega Base\n\n"
-            "3. QUY TẮC DỊCH THUẬT & ĐỘ DÀI:\n"
-            "- Dịch ngắn gọn, dứt khoát, dùng các từ hành động mạnh (như 'quét sạch', 'tấn công', 'thoát chết gang tấc', 'nâng cấp tối thượng').\n"
-            "- Độ dài câu phải vừa vặn để giọng đọc AI CapCut khớp chuẩn với video mà không bị nhanh quá hay chậm quá."
+            "    - 庇护所 / 基地 -> Căn cứ trú ẩn / Siêu căn cứ Mega Base"
         )
     },
     "minecraft_kids": {
         "id": "minecraft_kids",
-        "name": "🎮 Minecraft cho Trẻ Em (Vui nhộn, chuẩn gamer nhí)",
-        "description": "Tối ưu ngữ cảnh Minecraft thiếu nhi, xưng hô 'mình/các bạn', từ vựng chuẩn gamer Việt, ngắn gọn, giàu cảm xúc.",
+        "name": "🎮 Minecraft Phiêu Lưu & Troll Bựa Thiếu Nhi (Vui nhộn, chuẩn gamer nhí)",
+        "description": "Tối ưu ngữ cảnh Minecraft thiếu nhi, xưng hô 'mình/các bạn', từ vựng chuẩn gamer Việt, hài hước, giàu cảm xúc.",
         "prompt_context": (
-            "CHỦ ĐỀ & BỐI CẢNH ĐẶC BIỆT: Video về game MINECRAFT dành cho TRẺ EM / THIẾU NHI / GAME THỦ NHÍ xem.\n\n"
-            "1. PHONG CÁCH & VĂN PHONG DÀNH CHO TRẺ EM:\n"
-            "- Giọng điệu: Hào hứng, vui tươi, nhí nhảnh, hồi hộp, kịch tính, cuốn hút và dễ thương.\n"
-            "2. BỘ TỪ ĐIỂN THUẬT NGỮ MINECRAFT CHUẨN GAMER VIỆT (BẮT BUỘC SỬ DỤNG ĐÚNG):\n"
-            "  • Quái vật & Sinh vật:\n"
-            "    - 苦力怕 / 爬行者 -> Creeper (hoặc quái nổ)\n"
-            "    - 僵尸 / 丧尸 -> Zombie (xác sống)\n"
-            "    - 骷髅 / 骷髅弓箭手 -> Skeleton (bộ xương bắn cung)\n"
-            "    - 末影人 / 小黑 -> Enderman\n"
-            "    - 末影龙 -> Rồng Ender (Ender Dragon)\n"
-            "    - 村民 -> Dân làng / bác dân làng\n"
-            "    - 铁傀儡 -> Golem sắt (Người sắt bảo vệ)\n"
-            "    - 监守者 / 潜声守卫 -> Quái vật Warden (Quái bóng tối)\n"
-            "    - 凋灵 -> Quái Wither (Trùm Wither 3 đầu)\n"
-            "    - 猪灵 -> Piglin (Heo địa ngục)\n"
-            "    - 史莱姆 -> Slime (Cục thạch)\n"
-            "    - 烈焰人 -> Quái lửa Blaze\n"
-            "    - 恶魂 -> Ma địa ngục Ghast\n"
-            "    - 溺尸 -> Zombie đuối nước (Drowned)\n"
-            "    - 掠夺者 -> Kẻ cướp dân làng (Pillager)\n\n"
-            "  • Khối, Trang bị & Vật phẩm:\n"
-            "    - 钻石 / 钻石套 -> Kim cương / Bộ giáp kim cương\n"
-            "    - 下界合金 / 狱髓 -> Netherite / Giáp Netherite xịn nhất\n"
-            "    - 黑曜石 -> Đá Obsidian (Hắc diện thạch)\n"
-            "    - 基岩 -> Đá nền (Bedrock - không thể phá hủy)\n"
-            "    - 红石 -> Đá đỏ (Mạch đá đỏ)\n"
-            "    - 附魔金苹果 -> Táo vàng phù phép (Táo Enchant / Táo Notch)\n"
-            "    - 不死图腾 -> Bùa bất tử (Totem bất tử cứu mạng)\n"
-            "    - 鞘翅 -> Cánh cứng Elytra (Cánh lượn)\n"
-            "    - 镐子 / 斧头 / 剑 / 弓 -> Cúp đào đá / Rìu / Kiếm / Cung tên\n"
-            "    - 工作台 / 熔炉 / 箱子 -> Bàn chế tạo / Lò nung / Rương đồ\n"
-            "    - 潜影盒 -> Hộp Shulker (Hộp ma thuật)\n"
-            "    - 药水 / 隐身药水 -> Thuốc phù thủy / Thuốc tàng hình\n"
-            "    - TNT -> Thuốc nổ TNT\n\n"
-            "  • Hành động & Cơ chế chơi:\n"
-            "    - 挖矿 / 下矿 -> Đi đào mỏ / Đào khoáng sản\n"
-            "    - 合成 / 打造 -> Chế tạo đồ (Craft đồ)\n"
-            "    - 附魔 -> Phù phép (Ép ngọc tăng sức mạnh)\n"
-            "    - 极限生存 / 极限模式 -> Sinh tồn Hardcore (Chỉ có đúng 1 mạng duy nhất)\n"
-            "    - 生存模式 / 创造模式 -> Chế độ Sinh tồn / Sáng tạo\n"
-            "    - 落地水 -> Pha cứu mạng bằng xô nước (MLG Water drop clutch)\n"
-            "    - 跑酷 -> Nhảy Parkour điêu luyện\n"
-            "    - 陷阱 -> Bẫy / Cạm bẫy troll\n"
-            "    - 刷怪笼 / 刷怪塔 -> Lồng quái / Tháp farm đồ tự động\n"
-            "    - 模组 -> Bản Mod mở rộng\n\n"
-            "3. YÊU CẦU ĐỘ DÀI CÂU DỊCH:\n"
-            "- Câu dịch phải súc tích, ngắt câu nhịp nhàng, không quá dài dòng để giọng đọc AI CapCut TTS đọc kịp video và trẻ em đọc phụ đề dễ dàng."
+            "CHỦ ĐỀ & BỐI CẢNH ĐẶC BIỆT: Video Minecraft giải trí, phiêu lưu, troll bựa dành cho THIẾU NHI & GAME THỦ TRẺ TUỔI.\n\n"
+            "1. PHONG CÁCH KỂ CHUYỆN & DẪN DẮT:\n"
+            "- Giọng điệu: Hào hứng, vui tươi, nhí nhảnh, giàu cảm xúc, troll hài hước ('Ui là trời!', 'Xem chuyện gì xảy ra này!', 'Phen này toang thật rồi!').\n"
+            "- Xưng hô thân thiện: 'mình / các bạn' hoặc 'anh / các em', tạo không khí gần gũi như một người bạn đồng hành.\n"
+            "- Câu từ trong sáng, dễ hiểu, nhịp điệu rộn ràng, kích thích trí tò mò của trẻ em.\n\n"
+            "2. BỘ TỪ ĐIỂN THUẬT NGỮ CHUẨN GAMER VIỆT:\n"
+            "  • Quái vật: 苦力怕 -> Creeper (quái nổ), 僵尸 -> Zombie, 骷髅 -> Skeleton, 末影人 -> Enderman, 监守者 -> Quái Warden, 铁傀儡 -> Golem sắt, 凋灵 -> Boss Wither, 史莱姆 -> Cục Slime dính.\n"
+            "  • Vật phẩm: 钻石 -> Kim cương, 下界合金 -> Netherite xịn nhất, 黑曜石 -> Đá Obsidian, 红石 -> Đá đỏ, 不死图腾 -> Bùa bất tử, 鞘翅 -> Cánh Elytra, 附魔金苹果 -> Táo Notch thần thánh.\n"
+            "  • Hành động: 挖矿 -> Đi đào khoáng sản, 合成 -> Chế tạo đồ (Craft), 附魔 -> Phù phép nâng cấp, 落地水 -> Pha xô nước cứu mạng MLG, 跑酷 -> Nhảy Parkour đỉnh cao, 模组 -> Bản Mod siêu vui."
         )
     },
+    "movie_anime_recap": {
+        "id": "movie_anime_recap",
+        "name": "🎬 Tóm Tắt & Review Phim / Hoạt Hình / Anime (Cuốn hút, giữ chân người xem)",
+        "description": "Chuyên biệt cho video tóm tắt phim, review anime, truyện tranh manga/manhwa. Kể chuyện kịch tính, dẫn dắt cao trào và cú twist bất ngờ.",
+        "prompt_context": (
+            "CHỦ ĐỀ & BỐI CẢNH ĐẶC BIỆT: REVIEW PHIM, TÓM TẮT PHIM ĐIỆN ẢNH, ANIME & TRUYỆN TRANH (MOVIE / ANIME RECAP).\n\n"
+            "1. NGHỆ THUẬT BIÊN KỊCH REVIEW PHIM VIRAL GIỮ CHÂN NGƯỜI XEM:\n"
+            "- Giọng điệu: Hấp dẫn, bí ẩn, lôi cuốn, giọng kể chuyện truyền cảm (Storytelling Voiceover) như các kênh Review Phim triệu view.\n"
+            "- Hook 3 giây đầu: Đặt ra tình huống nghẹt thở hoặc câu hỏi bí ẩn ('Người đàn ông này không ngờ rằng...', 'Chỉ vì một quyết định sai lầm, cả gia đình đã...', 'Một thế giới nơi kẻ yếu bị đào thải...').\n"
+            "- Xưng hô ngôi thứ 3 khách quan nhưng lôi cuốn: 'Anh ta / Cô ấy / Hắn / Cậu bé / Ông lão / Nhân vật chính / Tên trùm', người kể ẩn hoặc dùng 'chúng ta'.\n"
+            "- Mạch kể liền mạch & chuyển cảnh mượt mà: Dùng liên từ tự nhiên ('Ngay sau đó...', 'Đúng lúc này...', 'Không ngờ rằng...', 'Hóa ra là...', 'Một sự thật kinh hoàng dần hé lộ...').\n"
+            "- Đẩy cao trào (Climax) & Cú twist (Plot Twist): Tăng cường các tính từ và động từ biểu cảm mạnh mẽ khi nhân vật phản đòn hoặc gặp biến cố ('lật kèo ngoạn mục', 'sụp đổ hoàn toàn', 'bừng tỉnh sức mạnh').\n\n"
+            "2. BỘ TỪ ĐIỂN CHUYỂN NGỮ ĐIỆN ẢNH & ANIME:\n"
+            "  • 逆袭 / 绝地反击 -> Màn lội ngược dòng ngoạn mục / Màn trả thù mãn nhãn\n"
+            "  • 反转 / 大反转 -> Cú twist bất ngờ / Pha quay xe không ai lường trước\n"
+            "  • 开挂 / 主角光环 -> Hào quang nhân vật chính / Bật mode sức mạnh bá đạo\n"
+            "  • 幕后黑手 -> Kẻ giật dây trong bóng tối / Trùm cuối giấu mặt\n"
+            "  • 危机时刻 / 命悬一线 -> Thời khắc ngàn cân treo sợi tóc / Giữa ranh giới sinh tử\n"
+            "  • 打脸 -> Màn vả mặt thích đáng / Khiến đối thủ bẽ bàng"
+        )
+    },
+    "comedy_drama_trend": {
+        "id": "comedy_drama_trend",
+        "name": "🎭 Drama / Kể Chuyện Cuộc Sống / Bắt Trend Douyin (Dí dỏm, viral cực mạnh)",
+        "description": "Dành cho video hài Douyin, đời sống thường ngày, drama bóc phốt, tình huống oái oăm, bắt trend giới trẻ cực mượt.",
+        "prompt_context": (
+            "CHỦ ĐỀ & BỐI CẢNH ĐẶC BIỆT: HÀI HƯỚC, DRAMA ĐỜI SỐNG, TÌNH HUỐNG HÀI HƯỚC DOUYIN & BẮT TREND TIKTOK.\n\n"
+            "1. PHONG CÁCH DIỄN ĐẠT DÍ DỎM & VIRAL:\n"
+            "- Giọng điệu: Hài hước, châm biếm nhẹ nhàng, cà khịa duyên dáng, tràn đầy năng lượng tươi vui.\n"
+            "- Ngôn từ bắt trend: Chuyển hóa sáng tạo ngôn ngữ mạng Trung Quốc sang các câu nói trend cực chất của giới trẻ Việt Nam ('quay xe cực gắt', 'bất ngờ chưa bà già', 'pha xử lý đi vào lòng đất', 'cười xỉu', 'cay cú', 'đúng là không thể tin nổi').\n"
+            "- Xưng hô gần gũi: 'anh chàng này / cô nàng này / anh bạn thân / thánh này' hoặc 'tôi / anh em'.\n\n"
+            "2. BỘ TỪ ĐIỂN TIẾNG LÓNG DOUYIN -> VIỆT NAM CHUẨN TREND:\n"
+            "  • 绝了 / 离谱 / 逆天 -> Ảo thật đấy / Quá là vô lý / Khó đỡ thật sự\n"
+            "  • 翻车 / 打脸 -> Pha xử lý đi vào lòng đất / Tự vả cực đau / Toang toàn tập\n"
+            "  • 大冤种 -> Kẻ chịu trận cay đắng / Nạn nhân xấu số\n"
+            "  • 塑料姐妹花 / 损友 -> Bạn thân chí cốt chuyên hãm hại / Tình anh em cây khế\n"
+            "  • 社死 / 尴尬 -> Tình huống quê độ muốn đào lỗ chui xuống / Quê xệ\n"
+            "  • 秀操作 -> Thể hiện kỹ năng đỉnh cao / Màn flexing siêu đẳng\n"
+            "  • 老铁 / 家人们 -> Anh em ơi / Cả nhà ơi"
+        )
+    },
+    "gaming_esports": {
+        "id": "gaming_esports",
+        "name": "🕹️ Game & Esports Tổng Hợp (Liên Quân, Roblox, Free Fire, Highlight đỉnh cao)",
+        "description": "Dành cho video game tổng hợp, liên quân, roblox, free fire, highlight, montage. Sôi động, nhiệt huyết, thuật ngữ gaming chuẩn.",
+        "prompt_context": (
+            "CHỦ ĐỀ & BỐI CẢNH ĐẶC BIỆT: GAME HIGHLIGHT, ESPORTS & TRÒ CHƠI ĐIỆN TỬ TỔNG HỢP (LIÊN QUÂN, ROBLOX, FREE FIRE, LMHT).\n\n"
+            "1. PHONG CÁCH BÌNH LUẬN VIÊN & STREAMER NHIỆT HUYẾT:\n"
+            "- Giọng điệu: Dồn dập, bùng nổ, hưng phấn, kịch tính theo từng pha combat và tình huống xử lý.\n"
+            "- Xưng hô: 'mình / các bạn' hoặc 'tôi / anh em', mang tính đồng hành và cổ vũ.\n"
+            "- Nhịp điệu ngắn gọn, sắc sảo, dùng từ ngữ hành động trực diện để giọng đọc AI bắt kịp tốc độ giao tranh trong video.\n\n"
+            "2. BỘ TỪ ĐIỂN GAMING CHUẨN ESPORTS VIỆT:\n"
+            "  • 秀操作 / 神操作 -> Pha xử lý 200 IQ / Highlight outplay cực đỉnh\n"
+            "  • 逆风翻盘 -> Lật kèo phút chót / Cú lội ngược dòng không tưởng\n"
+            "  • 偷家 / 偷塔 -> Đẩy lén trộm nhà chính / Cú backdoor thần sầu\n"
+            "  • 秒杀 / 瞬秒 -> Bốc hơi trong một nốt nhạc / One-shot đối thủ\n"
+            "  • 团灭 -> Quét sạch toàn bộ đội hình (Ace / Wipe out)\n"
+            "  • 抓人 / 游走 -> Đi gank bắt lẻ / Đảo đường hỗ trợ đồng đội\n"
+            "  • 坑队友 / 搞心态 -> Bóp đồng đội / Pha xử lý tấu hài"
+        )
+    },
+    "horror_mystery_investigation": {
+        "id": "horror_mystery_investigation",
+        "name": "🕵️ Kinh Dị / Trinh Thám / Bí Ẩn Rùng Rợn / Kỳ Án (Hồi hộp, nghẹt thở)",
+        "description": "Dành cho video kể chuyện kinh dị, trinh thám phá án, creepypasta, hiện tượng siêu nhiên. U ám, hồi hộp, giật gân, cuốn hút từng chi tiết.",
+        "prompt_context": (
+            "CHỦ ĐỀ & BỐI CẢNH ĐẶC BIỆT: KỂ CHUYỆN KINH DỊ, TRINH THÁM PHÁ ÁN, GIẢI MÃ BÍ ẨN & KỲ ÁN (HORROR / MYSTERY STORYTELLING).\n\n"
+            "1. NGHỆ THUẬT KỂ CHUYỆN BÍ ẨN NGHẸT THỞ:\n"
+            "- Giọng điệu: Trầm lắng, u ám, hồi hộp, lạnh gáy, kích thích tò mò tột độ của người xem.\n"
+            "- Hook mở màn: Khơi gợi nỗi sợ hãi hoặc sự bí ẩn không lời giải ('Địa điểm bị nguyền rủa này ẩn chứa điều gì?', 'Căn phòng số 404 và vụ biến mất bí ẩn...').\n"
+            "- Xưng hô: Khách quan, dẫn dắt góc nhìn thứ 3 ('nạn nhân / thám tử / người chứng kiến / kẻ tình nghi').\n"
+            "- Ngắt câu có chủ đích: Tạo ra các khoảng lặng hồi hộp để giọng đọc AI tạo cảm giác rùng rợn nghẹt thở.\n\n"
+            "2. BỘ TỪ ĐIỂN TRINH THÁM & KINH DỊ:\n"
+            "  • 悬案 / 诡异事件 -> Kỳ án chưa có lời giải / Hiện tượng kỳ bí rùng mình\n"
+            "  • 细思极恐 -> Càng ngẫm càng thấy sợ hãi / Rợn tóc gáy khi nhận ra sự thật\n"
+            "  • 蛛丝马迹 -> Những manh mối nhỏ nhất / Dấu vết then chốt\n"
+            "  • 真相大白 -> Sự thật kinh hoàng cuối cùng cũng được phơi bày"
+        )
+    },
+    "science_discovery_facts": {
+        "id": "science_discovery_facts",
+        "name": "💡 Khoa Học / Fact Thú Vị / Khám Phá Kỳ Thú (Tò mò, hấp dẫn)",
+        "description": "Dành cho video kiến thức thú vị, giải mã hiện tượng khoa học, thế giới tự nhiên, facts bất ngờ. Lôi cuốn, kích thích tò mò và giàu kiến thức.",
+        "prompt_context": (
+            "CHỦ ĐỀ & BỐI CẢNH ĐẶC BIỆT: KHÁM PHÁ KHOA HỌC, FACTS KỲ THÚ & THẾ GIỚI TỰ NHIÊN (SCIENCE & CURIOUS FACTS).\n\n"
+            "1. PHONG CÁCH DẪN DẮT LÔI CUỐN & KHƠI GỢI TRÍ TÒ MÒ:\n"
+            "- Giọng điệu: Hấp dẫn, hào hứng, thuyết phục, dẫn dắt người xem từ bất ngờ này sang kinh ngạc khác.\n"
+            "- Hook 3s đầu: Dùng câu hỏi gợi mở hoặc sự thật gây sốc ('Bạn có biết rằng...', 'Tại sao điều này lại xảy ra?', 'Sự thật đằng sau sẽ khiến bạn kinh ngạc!').\n"
+            "- Xưng hô: 'chúng ta / các bạn', ngôn ngữ chuẩn mực, khoa học nhưng dễ hiểu, không dùng từ ngữ quá hàn lâm phức tạp.\n\n"
+            "2. BỘ TỪ ĐIỂN KHÁM PHÁ TRI THỨC:\n"
+            "  • 令人震惊 / 不可思议 -> Sự thật khó tin / Hiện tượng vô cùng kinh ngạc\n"
+            "  • 揭秘 / 解密 -> Giải mã bí ẩn / Hé lộ nguyên lý khoa học đằng sau\n"
+            "  • 颠覆认知 -> Thay đổi hoàn toàn suy nghĩ của bạn / Phá vỡ mọi định kiến"
+        )
+    },
+    "historical_cultivation": {
+        "id": "historical_cultivation",
+        "name": "👑 Cổ Trang / Tu Tiên / Kiếm Hiệp Huyền Huyễn (Hào sảng, khí chất)",
+        "description": "Dành cho video dã sử, cổ trang, hoạt hình 3D Trung Quốc tu tiên, kiếm hiệp, huyền huyễn. Hào sảng, khí thế, thuật ngữ tu chân chuẩn mực.",
+        "prompt_context": (
+            "CHỦ ĐỀ & BỐI CẢNH ĐẶC BIỆT: HOẠT HÌNH 3D TU TIÊN, CỔ TRANG, KIẾM HIỆP & HUYỀN HUYỄN TRUNG QUỐC.\n\n"
+            "1. PHONG CÁCH HÀO SẢNG & KHÍ THẾ VÕ HIỆP:\n"
+            "- Giọng điệu: Hùng hồn, trang trọng, khí chất phi phàm, đậm chất truyện tiên hiệp/kiếm hiệp.\n"
+            "- Xưng hô chuẩn mực: 'hắn / nàng / tông chủ / lão tổ / sư phụ / đệ tử / tiểu tử này'.\n"
+            "- Dùng các thuật ngữ Hán-Việt quen thuộc của dòng truyện tu tiên để tạo sự quen thuộc và cuốn hút với khán giả mê truyện.\n\n"
+            "2. BỘ TỪ ĐIỂN TIÊN HIỆP & CỔ TRANG CHUẨN MỰC:\n"
+            "  • 突破境界 / 渡劫 -> Đột phá cảnh giới / Vượt qua lôi kiếp\n"
+            "  • 逆天改命 -> Nghịch thiên cải mệnh / Đảo ngược số phận\n"
+            "  • 绝世神兵 / 法宝 -> Thần binh tuyệt thế / Pháp bảo thượng cổ\n"
+            "  • 宗门大比 -> Đại hội tỷ thí tông môn / Trận chiến đỉnh cao"
+        )
+    },
+    "general_storytelling": {
+        "id": "general_storytelling",
+        "name": "🌐 Kể Chuyện & Thuyết Minh Viral Tổng Hợp (Dẫn dắt cảm xúc, chuẩn TikTok/Reels)",
+        "description": "Văn phong kể chuyện điện ảnh mượt mà, thoát ý, giàu cảm xúc, phù hợp cho mọi thể loại video viral trên mạng xã hội.",
+        "prompt_context": (
+            "CHỦ ĐỀ & BỐI CẢNH: KỂ CHUYỆN & THUYẾT MINH VIDEO NGẮN VIRAL (TIKTOK / DOUYIN / SHORTS).\n\n"
+            "1. PHONG CÁCH BIÊN DỊCH VIRAL NARRATIVE:\n"
+            "- Giọng điệu: Truyền cảm, sống động, cuốn hút từ câu đầu tiên đến câu cuối cùng.\n"
+            "- Nguyên tắc dịch thoát ý: Không dịch thô từng chữ (word-by-word) mà dịch theo mạch cảm xúc và cốt truyện của người nói.\n"
+            "- Câu văn ngắn gọn, giàu hình ảnh, nhịp điệu ngắt nghỉ hoàn hảo cho giọng đọc AI lồng tiếng."
+        )
+    },
+    # Backward compatibility aliases
     "gaming_general": {
         "id": "gaming_general",
-        "name": "🕹️ Game & Esports Tổng Hợp (Kịch tính, hài hước)",
+        "name": "🕹️ Game & Esports Tổng Hợp (Liên Quân, Roblox, Free Fire, Highlight đỉnh cao)",
         "description": "Dành cho video game tổng hợp, liên quân, roblox, free fire, esports.",
-        "prompt_context": (
-            "CHỦ ĐỀ: Video Game / Trò chơi điện tử. Giọng điệu hào hứng, kịch tính, dùng thuật ngữ game quen thuộc (combat, gank, leo rank, gánh team, outplay, boss, farm đồ). Xưng hô 'mình/các bạn'."
-        )
+        "prompt_context": "CHỦ ĐỀ: Video Game / Trò chơi điện tử. Giọng điệu hào hứng, kịch tính, dùng thuật ngữ game quen thuộc. Xưng hô 'mình/các bạn'."
     },
     "comedy_entertainment": {
         "id": "comedy_entertainment",
-        "name": "✨ Hài Hước / Giải Trí Đời Sống (Tự nhiên, dí dỏm)",
+        "name": "🎭 Drama / Kể Chuyện Cuộc Sống / Bắt Trend Douyin (Dí dỏm, viral cực mạnh)",
         "description": "Dành cho video hài Douyin, đời sống thường ngày, bắt trend.",
-        "prompt_context": (
-            "CHỦ ĐỀ: Giải trí, hài hước đời sống. Văn phong gần gũi, dí dỏm, bắt trend tự nhiên, mượt mà, thuần phong mỹ tục tiếng Việt."
-        )
+        "prompt_context": "CHỦ ĐỀ: Giải trí, hài hước đời sống. Văn phong gần gũi, dí dỏm, bắt trend tự nhiên, mượt mà, thuần phong mỹ tục tiếng Việt."
     },
     "general": {
         "id": "general",
-        "name": "🌐 Đa Dụng / Tiêu Chuẩn (Chuẩn mực, súc tích)",
+        "name": "🌐 Kể Chuyện & Thuyết Minh Viral Tổng Hợp (Dẫn dắt cảm xúc, chuẩn TikTok/Reels)",
         "description": "Dịch thuật tổng quát, chuẩn xác và trung thực với nội dung gốc.",
-        "prompt_context": (
-            "CHỦ ĐỀ: Video đa dụng ngắn. Văn phong tự nhiên, súc tích, chuẩn tiếng Việt hiện đại."
-        )
+        "prompt_context": "CHỦ ĐỀ: Video đa dụng ngắn. Văn phong tự nhiên, súc tích, chuẩn tiếng Việt hiện đại."
     }
 }
 

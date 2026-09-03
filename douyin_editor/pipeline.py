@@ -69,7 +69,9 @@ class DouyinAutoPipeline:
             ai_model_name = getattr(self.config, "deepseek_model_name", "deepseek-v4-flash")
             ai_info = f"DeepSeek AI ({ai_model_name})"
         table.add_row("AI Dịch thuật", ai_info)
-        topic_info = TRANSLATION_TOPIC_PRESETS.get(getattr(self.config, "topic_preset", "minecraft_kids"), {}).get("name", "Minecraft cho Trẻ Em")
+        topic_info = TRANSLATION_TOPIC_PRESETS.get(getattr(self.config, "topic_preset", "general_storytelling"), {}).get("name", "Kể Chuyện Viral Tổng Hợp")
+        if getattr(self.config, "custom_translation_prompt", None):
+            topic_info += " (+ Ghi chú kịch bản)"
         table.add_row("Chủ đề dịch thuật", topic_info)
         table.add_row("Giọng đọc tiếng Việt (TTS)", self.config.tts_config.voice)
         table.add_row("Font chữ Hardsub", f"{self.config.subtitle_style.font_name} (Size: {self.config.subtitle_style.font_size}px)")

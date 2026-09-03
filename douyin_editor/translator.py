@@ -35,38 +35,93 @@ from transcriber import SubtitleItem
 logger = logging.getLogger(__name__)
 
 
+def polish_story_translation_item(text: str) -> str:
+    """
+    Tinh chỉnh hậu kỳ câu dịch tiếng Việt:
+    - Loại bỏ lỗi lặp từ vô nghĩa do nhận diện giọng nói STT (stuttering).
+    - Chuẩn hóa khoảng trắng, dấu câu cảm xúc để giọng đọc CapCut AI TTS ngắt nghỉ tự nhiên.
+    """
+    if not text:
+        return ""
+
+    # Chuẩn hóa khoảng trắng
+    text = " ".join(text.strip().split())
+
+    # Loại bỏ các tiền tố index thừa nếu còn sót (như "[1] ", "1. ", "(1) ")
+    text = re.sub(r"^(?:\[?\d+\]?[\.:\-]?\s*|\(\d+\)[\.:\-]?\s*)", "", text).strip()
+
+    # Loại bỏ các cụm từ lặp đôi do lỗi STT tiếng Trung (ví dụ: "tôi tôi", "là là", "này này", "thế là thế là")
+    stutter_patterns = [
+        (r"\b(tôi|mình|bạn|anh|em|hắn|họ|chúng ta)\s+\1\b", r"\1"),
+        (r"\b(là|thì|mà|đã|đang|sẽ|rất|quá|lại)\s+\1\b", r"\1"),
+        (r"\b(thế là|cái này|đây là|nhưng mà|bởi vì)\s+\1\b", r"\1"),
+        (r"\b(mau|nhanh|chạy|đi|nhìn)\s+\1\s+\1\b", r"\1 \1"),
+    ]
+    for pat, repl in stutter_patterns:
+        text = re.sub(pat, repl, text, flags=re.IGNORECASE)
+
+    # Xử lý các dấu câu thừa
+    text = re.sub(r"\s+([,\.\?!;:])", r"\1", text)
+    text = re.sub(r"([,\.\?!;:]){2,}", r"\1", text)
+
+    # Viết hoa chữ cái đầu câu nếu cần
+    if text and text[0].islower():
+        text = text[0].upper() + text[1:]
+
+    return text.strip()
+
+
 def build_translation_system_instruction(config: PipelineConfig) -> str:
-    """Tạo System Instruction chuyên sâu với bối cảnh chủ đề (ví dụ: Minecraft cho trẻ em)."""
+    """
+    Tạo System Instruction chuyên sâu với triết lý Story-Driven Viral Narrative Translation:
+    Biên dịch video ngắn Douyin/TikTok sang Tiếng Việt với cốt truyện liền mạch, kịch tính,
+    hook 3s đầu cuốn hút, giữ chân người xem tối đa và nhịp điệu hoàn hảo cho giọng đọc CapCut TTS.
+    """
     topic_id = getattr(config, "topic_preset", "minecraft_kids")
     custom_prompt = getattr(config, "custom_translation_prompt", None)
 
     if custom_prompt and custom_prompt.strip():
-        topic_context = f"BỐI CẢNH & YÊU CẦU ĐẶC THÙ (TÙY CHỈNH):\n{custom_prompt.strip()}"
+        topic_context = f"BỐI CẢNH & YÊU CẦU ĐẶC THÙ (TÙY CHỈNH TỪ NGƯỜI DÙNG):\n{custom_prompt.strip()}"
     else:
         preset = TRANSLATION_TOPIC_PRESETS.get(topic_id, TRANSLATION_TOPIC_PRESETS.get("minecraft_kids", {}))
         topic_context = preset.get("prompt_context", "")
 
     return (
-        "Bạn là chuyên gia biên dịch phụ đề video ngắn (Douyin/TikTok/YouTube Shorts) từ Tiếng Trung sang Tiếng Việt xuất sắc nhất.\n"
-        "Nhiệm vụ: Dịch toàn bộ danh sách các câu phụ đề sau đây sang tiếng Việt chuẩn, tự nhiên, cuốn hút, đúng ngữ cảnh chủ đề.\n\n"
+        "Bạn là đạo diễn kịch bản & chuyên gia biên kịch phụ đề video ngắn (Douyin/TikTok/YouTube Shorts/Reels) từ Tiếng Trung sang Tiếng Việt xuất sắc nhất.\n"
+        "MỤC TIÊU TỐI THƯỢNG: Tạo ra bản dịch tiếng Việt mang cốt truyện LIỀN MẠCH, CUỐN HÚT, KỊCH TÍNH, GIỮ CHÂN NGƯỜI XEM TỐI ĐA (High-Retention Viral Video Script).\n\n"
         f"{topic_context}\n\n"
-        "QUY TẮC BẮT BUỘC:\n"
-        "1. BẢO TOÀN SỐ LƯỢNG CÂU 100% (TỶ LỆ 1:1 TUYỆT ĐỐI): Đầu vào có bao nhiêu số [index] thì đầu ra PHẢI CÓ ĐÚNG BẤY NHIÊU DÒNG [index].\n"
-        "2. ĐỊNH DẠNG ĐẦU RA BẮT BUỘC: Mỗi dòng trả về đúng cú pháp: [index] <câu dịch tiếng Việt> (Ví dụ: [1] Xin chào các bạn).\n"
-        "3. TUYỆT ĐỐI KHÔNG GỘP CÂU, KHÔNG TÁCH CÂU, KHÔNG BỎ SÓT CÂU: Giữ nguyên đúng số thứ tự [index] gốc tương ứng.\n"
-        "4. VĂN PHONG TỰ NHIÊN, KHÔNG LẶP TỪ: Dịch thoát ý, súc tích để giọng đọc lồng tiếng kịp nhịp video. Nếu gặp các câu ngắn lặp lại liên tục (do lỗi nhận diện âm thanh), hãy dịch súc tích tự nhiên, tuyệt đối tránh lặp từ ngớ ngẩn.\n"
-        "5. CHỈ TRẢ VỀ DUY NHẤT danh sách các dòng [index] đã dịch. Không thêm lời chào, không kèm giải thích, không bọc trong thẻ markdown ```."
+        "NGUYÊN TẮC BIÊN KỊCH & DỊCH THUẬT CỐT TRUYỆN VIRAL (BẮT BUỘC TUÂN THỦ):\n"
+        "1. TẬN DỤNG BỐI CẢNH TOÀN BỘ VIDEO: Luôn đọc kỹ toàn bộ kịch bản video được cung cấp để hiểu rõ: Cốt truyện tổng thể, nhân vật chính/phụ, mối quan hệ, mở đầu, cao trào và kết cục. Tuyệt đối không dịch mù từng câu đơn lẻ.\n"
+        "2. HOOK MỞ ĐẦU NGHẸT THỞ (3-5 GIÂY ĐẦU): Các câu mở đầu phải giật gân, khơi gợi tò mò tột độ hoặc đặt người xem vào tình huống cấp bách ('Không thể tin nổi...', 'Chuyện gì sẽ xảy ra nếu...', 'Một bí mật kinh hoàng...', 'Bạn dám thử thách này không?').\n"
+        "3. MẠCH TRUYỆN LIỀN MẠCH & LIÊN KẾT TỰ NHIÊN (NARRATIVE FLOW): Dùng các từ nối tự nhiên trong văn kể chuyện tiếng Việt ('Đúng lúc này...', 'Không ngờ rằng...', 'Hóa ra là...', 'Ngay sau đó...', 'Bất ngờ thay...'). Biến các câu thoại rời rạc của tiếng Trung thành một dòng chảy câu chuyện hấp dẫn.\n"
+        "4. ĐỒNG NHẤT NGÔI XƯNG & VAI VẾ 100%: Duy trì nhất quán tuyệt đối cách xưng hô (người dẫn chuyện xưng 'mình/các bạn' hoặc 'tôi/anh em'; hoặc nhân vật 'anh ta/cô ấy/hắn/ông lão') từ đầu đến cuối video, không thay đổi thất thường.\n"
+        "5. VIỆT HÓA TIẾNG LÓNG DOUYIN TỰ NHIÊN: Chuyển các từ lóng mạng Trung Quốc ('逆天', '打脸', '翻车', '绝了', '老铁', '大冤种', '逆风翻盘', '偷家') sang tiếng lóng bắt trend hiện đại của giới trẻ Việt Nam ('quay xe cực gắt', 'ảo thật đấy', 'lật kèo ngoạn mục', 'bất ngờ chưa bà già', 'pha xử lý đi vào lòng đất', 'toang thật rồi').\n"
+        "6. NHỊP ĐIỆU CÂN ĐỐI CHO GIỌNG ĐỌC CAPCUT AI TTS: Câu dịch phải súc tích, ngắt nhịp tự nhiên, có dấu phẩy (,) và dấu chấm (.) hợp lý để giọng đọc AI lồng tiếng ngắt nghỉ đúng chỗ, truyền cảm, không bị nuốt chữ hay dồn chữ.\n"
+        "7. BẢO TOÀN SỐ LƯỢNG CÂU 100% (TỶ LỆ 1:1 TUYỆT ĐỐI): Đầu vào có bao nhiêu số [index] thì đầu ra PHẢI CÓ ĐÚNG BẤY NHIÊU DÒNG [index].\n"
+        "8. ĐỊNH DẠNG ĐẦU RA BẮT BUỘC: Mỗi dòng trả về đúng cú pháp: [index] <câu dịch tiếng Việt> (Ví dụ: [1] Xin chào các bạn).\n"
+        "9. CHỈ TRẢ VỀ DUY NHẤT danh sách các dòng [index] đã dịch. Không thêm lời chào, không kèm giải thích, không bọc trong thẻ markdown ```."
     )
 
 
-def build_batch_prompt(batch: List[SubtitleItem]) -> str:
-    """Tạo prompt danh sách câu [index] tối ưu cho AI dịch chính xác 100% không lo lỗi format SRT"""
+def build_batch_prompt(batch: List[SubtitleItem], full_story_context: Optional[str] = None) -> str:
+    """Tạo prompt danh sách câu [index] tối ưu kèm bối cảnh cốt truyện toàn bài để AI dịch chuẩn xác nhất."""
     lines = [f"[{item.index}] {item.text.strip()}" for item in batch]
-    content = "\n".join(lines)
+    batch_content = "\n".join(lines)
+
+    story_section = ""
+    if full_story_context and full_story_context.strip():
+        story_section = (
+            f"[BỐI CẢNH TOÀN BỘ KỊCH BẢN VIDEO ĐỂ NẮM CỐT TRUYỆN & NHÂN VẬT]:\n"
+            f"{full_story_context.strip()}\n\n"
+            f"----------------------------------------\n"
+        )
+
     return (
-        f"[DANH SÁCH {len(batch)} CÂU PHỤ ĐỀ TIẾNG TRUNG CẦN DỊCH]:\n"
-        f"{content}\n\n"
-        f"Hãy dịch chính xác toàn bộ {len(batch)} câu trên sang Tiếng Việt, trả về đúng {len(batch)} dòng theo định dạng [index] <câu dịch>:"
+        f"{story_section}"
+        f"[DANH SÁCH {len(batch)} CÂU PHỤ ĐỀ TIẾNG TRUNG CẦN DỊCH CHO PHÂN ĐOẠN NÀY]:\n"
+        f"{batch_content}\n\n"
+        f"Hãy dịch toàn bộ {len(batch)} câu trên sang Tiếng Việt chuẩn theo đúng mạch cốt truyện và nhịp điệu video. "
+        f"Bắt buộc trả về đúng {len(batch)} dòng theo định dạng [index] <câu dịch>:"
     )
 
 
@@ -197,15 +252,16 @@ def translate_batch_resilient(
     b_idx: int,
     total_batches: int,
     engine_name: str = "AI",
-    max_batch_retries: int = 2
+    max_batch_retries: int = 2,
+    full_story_context: Optional[str] = None
 ) -> List[SubtitleItem]:
     """
-    Dịch một batch phụ đề với cơ chế chia nhỏ đệ quy, tự sửa lỗi, tự bù câu thiếu và chống lệch timeline 100%.
+    Dịch một batch phụ đề với bối cảnh kịch bản cốt truyện toàn bài, tự sửa lỗi, tự bù câu thiếu và chống lệch timeline 100%.
     """
     if not batch:
         return []
 
-    prompt = build_batch_prompt(batch)
+    prompt = build_batch_prompt(batch, full_story_context=full_story_context)
     trans_map: Dict[int, str] = {}
 
     # Lần gọi chính thức đầu tiên
@@ -229,7 +285,7 @@ def translate_batch_resilient(
         retry_prompt = (
             f"⚠️ LƯU Ý: Vui lòng dịch ĐẦY ĐỦ các câu sau đây sang Tiếng Việt. "
             f"Bắt buộc trả về đúng từng dòng theo định dạng [index] <câu dịch>:\n\n"
-            f"{build_batch_prompt(missing_items)}"
+            f"{build_batch_prompt(missing_items, full_story_context=full_story_context)}"
         )
         try:
             retry_res = call_ai_fn(retry_prompt)
@@ -266,6 +322,9 @@ def translate_batch_resilient(
         v_text = trans_map.get(orig_item.index, "").strip()
         if not v_text:
             v_text = orig_item.text.strip()
+        else:
+            v_text = polish_story_translation_item(v_text)
+
         res_items.append(
             SubtitleItem(
                 index=orig_item.index,
@@ -530,6 +589,13 @@ class DeepSeekTranslator:
         total_items = len(original_items)
         logger.info(f"[Bước 3] Đang dịch {total_items} câu phụ đề bằng DeepSeek API ({self.model_name})...")
 
+        # Trích xuất toàn cảnh kịch bản video tiếng Trung để AI nắm trọn vẹn cốt truyện & nhân vật
+        story_lines = [f"[{it.index}] {it.text.strip()}" for it in original_items]
+        if len(story_lines) <= 200:
+            full_story_context = "\n".join(story_lines)
+        else:
+            full_story_context = "\n".join(story_lines[:100] + [f"... ({len(story_lines)-150} câu tiếp theo) ..."] + story_lines[-50:])
+
         final_translated_items: List[SubtitleItem] = []
 
         # Tối ưu siêu tốc: Nếu dưới 60 câu, gửi toàn bộ trong 1 request duy nhất (Tiết kiệm 10s + Câu dịch liền mạch)
@@ -540,7 +606,8 @@ class DeepSeekTranslator:
                     batch=original_items,
                     b_idx=1,
                     total_batches=1,
-                    engine_name="DeepSeek API"
+                    engine_name="DeepSeek API",
+                    full_story_context=full_story_context
                 )
                 pbar.update(total_items)
         else:
@@ -556,7 +623,8 @@ class DeepSeekTranslator:
                     batch=batch,
                     b_idx=b_idx,
                     total_batches=total_batches,
-                    engine_name="DeepSeek API"
+                    engine_name="DeepSeek API",
+                    full_story_context=full_story_context
                 )
                 return b_idx, res_items
 
@@ -933,6 +1001,13 @@ class ChatGPTWebTranslator:
         total_batches = len(batches)
         logger.info(f"[Bước 3] Đang dịch {total_items} câu phụ đề bằng ChatGPT Web ({self.model_name}) - Chia {total_batches} đoạn ({batch_size} câu/đoạn)...")
 
+        # Trích xuất toàn cảnh kịch bản video tiếng Trung để ChatGPT nắm trọn vẹn cốt truyện & nhân vật
+        story_lines = [f"[{it.index}] {it.text.strip()}" for it in original_items]
+        if len(story_lines) <= 200:
+            full_story_context = "\n".join(story_lines)
+        else:
+            full_story_context = "\n".join(story_lines[:100] + [f"... ({len(story_lines)-150} câu tiếp theo) ..."] + story_lines[-50:])
+
         final_translated_items: List[SubtitleItem] = []
 
         with tqdm(total=total_items, desc="[Bước 3] ChatGPT Dịch thuật SRT (Chia Đoạn)", leave=False) as pbar:
@@ -942,7 +1017,8 @@ class ChatGPTWebTranslator:
                     batch=batch,
                     b_idx=b_idx,
                     total_batches=total_batches,
-                    engine_name="ChatGPT Web"
+                    engine_name="ChatGPT Web",
+                    full_story_context=full_story_context
                 )
                 final_translated_items.extend(batch_res)
                 pbar.update(len(batch))
