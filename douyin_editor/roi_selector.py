@@ -197,14 +197,20 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
         orig_w, orig_h = self.orig_image.size
 
         # Khởi tạo tọa độ mặc định vùng mờ nếu chưa có
-        if self.roi_w is None:
-            self.roi_w = orig_w
-        if self.roi_h is None:
-            self.roi_h = int(orig_h * self.blur_region.height_ratio)
-        if self.roi_x is None:
-            self.roi_x = int((orig_w - self.roi_w) / 2)
-        if self.roi_y is None:
-            self.roi_y = int(orig_h * self.blur_region.y_ratio)
+        if self.blur_region.x is not None and self.blur_region.y is not None:
+            self.roi_x = int(self.blur_region.x)
+            self.roi_y = int(self.blur_region.y)
+            self.roi_w = int(self.blur_region.width) if self.blur_region.width is not None else 683
+            self.roi_h = int(self.blur_region.height) if self.blur_region.height is not None else 50
+        else:
+            if self.roi_w is None:
+                self.roi_w = int(orig_w * 0.5336) if orig_w >= 1000 else orig_w
+            if self.roi_h is None:
+                self.roi_h = int(orig_h * self.blur_region.height_ratio)
+            if self.roi_x is None:
+                self.roi_x = int((orig_w - self.roi_w) / 2)
+            if self.roi_y is None:
+                self.roi_y = int(orig_h * self.blur_region.y_ratio)
 
     def _format_time(self, sec: float) -> str:
         sec = max(0.0, sec)
@@ -455,16 +461,43 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
 
         # Preset Buttons Vùng Mờ
         blur_preset_row = ctk.CTkFrame(self.card_blur_ctrl, fg_color="transparent")
-        blur_preset_row.pack(fill="x", padx=12, pady=(2, 6))
+        blur_preset_row.pack(fill="x", padx=12, pady=(2, 4))
 
-        ctk.CTkButton(blur_preset_row, text="📍 Đáy", width=70, height=26, fg_color="#334155", hover_color="#475569", command=self._apply_bottom_preset).pack(side="left", padx=(0, 4))
-        ctk.CTkButton(blur_preset_row, text="📍 Giữa", width=70, height=26, fg_color="#334155", hover_color="#475569", command=self._apply_middle_preset).pack(side="left", padx=4)
-        ctk.CTkButton(blur_preset_row, text="📍 Đỉnh", width=70, height=26, fg_color="#334155", hover_color="#475569", command=self._apply_top_preset).pack(side="left", padx=4)
+        ctk.CTkButton(blur_preset_row, text="📍 Đáy", width=58, height=26, fg_color="#334155", hover_color="#475569", command=self._apply_bottom_preset).pack(side="left", padx=(0, 2))
+        ctk.CTkButton(blur_preset_row, text="📍 Giữa", width=58, height=26, fg_color="#334155", hover_color="#475569", command=self._apply_middle_preset).pack(side="left", padx=2)
+        ctk.CTkButton(blur_preset_row, text="📍 Đỉnh", width=58, height=26, fg_color="#334155", hover_color="#475569", command=self._apply_top_preset).pack(side="left", padx=2)
+        ctk.CTkButton(blur_preset_row, text="🎯 Chuẩn Douyin", width=110, height=26, fg_color="#0284c7", hover_color="#0369a1", font=ctk.CTkFont(size=11, weight="bold"), command=self._apply_douyin_custom_preset).pack(side="left", padx=(2, 0))
+
+        # Ô nhập tọa độ tùy chỉnh (Custom Pixel Coordinates: X, Y, W, H)
+        coords_input_grid = ctk.CTkFrame(self.card_blur_ctrl, fg_color="#18181b", corner_radius=6)
+        coords_input_grid.pack(fill="x", padx=12, pady=(4, 4))
+        for col in range(4):
+            coords_input_grid.grid_columnconfigure(col, weight=1)
+
+        ctk.CTkLabel(coords_input_grid, text="X (px):", font=ctk.CTkFont(size=10, weight="bold"), text_color="#38bdf8").grid(row=0, column=0, sticky="w", padx=4, pady=(2, 0))
+        self.entry_roi_x = ctk.CTkEntry(coords_input_grid, width=54, height=26, font=ctk.CTkFont(family="Consolas", size=11))
+        self.entry_roi_x.grid(row=1, column=0, sticky="ew", padx=2, pady=(0, 4))
+        self.entry_roi_x.bind("<KeyRelease>", self._on_blur_entries_edited)
+
+        ctk.CTkLabel(coords_input_grid, text="Y (px):", font=ctk.CTkFont(size=10, weight="bold"), text_color="#38bdf8").grid(row=0, column=1, sticky="w", padx=4, pady=(2, 0))
+        self.entry_roi_y = ctk.CTkEntry(coords_input_grid, width=54, height=26, font=ctk.CTkFont(family="Consolas", size=11))
+        self.entry_roi_y.grid(row=1, column=1, sticky="ew", padx=2, pady=(0, 4))
+        self.entry_roi_y.bind("<KeyRelease>", self._on_blur_entries_edited)
+
+        ctk.CTkLabel(coords_input_grid, text="W (px):", font=ctk.CTkFont(size=10, weight="bold"), text_color="#38bdf8").grid(row=0, column=2, sticky="w", padx=4, pady=(2, 0))
+        self.entry_roi_w = ctk.CTkEntry(coords_input_grid, width=54, height=26, font=ctk.CTkFont(family="Consolas", size=11))
+        self.entry_roi_w.grid(row=1, column=2, sticky="ew", padx=2, pady=(0, 4))
+        self.entry_roi_w.bind("<KeyRelease>", self._on_blur_entries_edited)
+
+        ctk.CTkLabel(coords_input_grid, text="H (px):", font=ctk.CTkFont(size=10, weight="bold"), text_color="#38bdf8").grid(row=0, column=3, sticky="w", padx=4, pady=(2, 0))
+        self.entry_roi_h = ctk.CTkEntry(coords_input_grid, width=54, height=26, font=ctk.CTkFont(family="Consolas", size=11))
+        self.entry_roi_h.grid(row=1, column=3, sticky="ew", padx=2, pady=(0, 4))
+        self.entry_roi_h.bind("<KeyRelease>", self._on_blur_entries_edited)
 
         # Thông số vùng mờ
         self.lbl_blur_info = ctk.CTkLabel(
             self.card_blur_ctrl,
-            text="Tọa độ: X=0, Y=0, W=0, H=0",
+            text=f"Tọa độ: X={self.roi_x or 293}, Y={self.roi_y or 517}, W={self.roi_w or 683}, H={self.roi_h or 50} (Y=71.8%)",
             font=ctk.CTkFont(family="Consolas", size=11),
             text_color="gray70"
         )
@@ -504,6 +537,100 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
             self.seg_alignment.set("⬆️ Trên cùng")
         else:
             self.seg_alignment.set("⬇️ Dưới cùng")
+        self._sync_blur_entries_from_roi()
+
+    def _sync_blur_entries_from_roi(self):
+        """Đồng bộ giá trị từ roi_x/y/w/h vào các ô nhập Entry"""
+        if hasattr(self, "entry_roi_x") and self.roi_x is not None:
+            self.entry_roi_x.delete(0, "end")
+            self.entry_roi_x.insert(0, str(int(self.roi_x)))
+        if hasattr(self, "entry_roi_y") and self.roi_y is not None:
+            self.entry_roi_y.delete(0, "end")
+            self.entry_roi_y.insert(0, str(int(self.roi_y)))
+        if hasattr(self, "entry_roi_w") and self.roi_w is not None:
+            self.entry_roi_w.delete(0, "end")
+            self.entry_roi_w.insert(0, str(int(self.roi_w)))
+        if hasattr(self, "entry_roi_h") and self.roi_h is not None:
+            self.entry_roi_h.delete(0, "end")
+            self.entry_roi_h.insert(0, str(int(self.roi_h)))
+
+    def _on_blur_entries_edited(self, _event=None):
+        """Cập nhật tọa độ vùng mờ khi người dùng gõ trực tiếp vào ô X, Y, W, H"""
+        try:
+            x_str = self.entry_roi_x.get().strip()
+            y_str = self.entry_roi_y.get().strip()
+            w_str = self.entry_roi_w.get().strip()
+            h_str = self.entry_roi_h.get().strip()
+            if not x_str or not y_str or not w_str or not h_str:
+                return
+            x = int(x_str)
+            y = int(y_str)
+            w = int(w_str)
+            h = int(h_str)
+            if self.orig_image:
+                orig_w, orig_h = self.orig_image.size
+                self.roi_x = max(0, min(x, orig_w - 2))
+                self.roi_y = max(0, min(y, orig_h - 2))
+                self.roi_w = max(2, min(w, orig_w - self.roi_x))
+                self.roi_h = max(2, min(h, orig_h - self.roi_y))
+            else:
+                self.roi_x, self.roi_y, self.roi_w, self.roi_h = x, y, w, h
+            self._draw_canvas(update_entries=False)
+        except ValueError:
+            pass
+
+    def _apply_douyin_custom_preset(self):
+        """Áp dụng tọa độ vùng mờ phụ đề Douyin chuẩn: X=293, Y=517, W=683, H=50 (Y=71.8%)"""
+        if not self.orig_image:
+            return
+        w, h = self.orig_image.size
+        if w >= 1200 and h >= 700:
+            scale_x = w / 1280.0
+            scale_y = h / 720.0
+            self.roi_x = int(293 * scale_x)
+            self.roi_y = int(517 * scale_y)
+            self.roi_w = int(683 * scale_x)
+            self.roi_h = int(50 * scale_y)
+        else:
+            self.roi_x = 293
+            self.roi_y = 517
+            self.roi_w = 683
+            self.roi_h = 50
+        self._sync_blur_entries_from_roi()
+        self._draw_canvas(update_entries=False)
+
+    def _apply_bottom_preset(self):
+        if not self.orig_image:
+            return
+        w, h = self.orig_image.size
+        self.roi_x = 0
+        self.roi_y = int(h * 0.718)
+        self.roi_w = w
+        self.roi_h = max(30, int(h * 0.0694))
+        self._sync_blur_entries_from_roi()
+        self._draw_canvas(update_entries=False)
+
+    def _apply_top_preset(self):
+        if not self.orig_image:
+            return
+        w, h = self.orig_image.size
+        self.roi_x = 0
+        self.roi_y = int(h * 0.06)
+        self.roi_w = w
+        self.roi_h = int(h * 0.14)
+        self._sync_blur_entries_from_roi()
+        self._draw_canvas(update_entries=False)
+
+    def _apply_middle_preset(self):
+        if not self.orig_image:
+            return
+        w, h = self.orig_image.size
+        self.roi_x = 0
+        self.roi_y = int(h * 0.44)
+        self.roi_w = w
+        self.roi_h = int(h * 0.16)
+        self._sync_blur_entries_from_roi()
+        self._draw_canvas(update_entries=False)
 
     def _on_mode_switched(self, val: str):
         if "Phụ Đề" in val:
@@ -624,36 +751,6 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
 
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _apply_bottom_preset(self):
-        if not self.orig_image:
-            return
-        w, h = self.orig_image.size
-        self.roi_x = 0
-        self.roi_y = int(h * 0.72)
-        self.roi_w = w
-        self.roi_h = int(h * 0.18)
-        self._draw_canvas()
-
-    def _apply_top_preset(self):
-        if not self.orig_image:
-            return
-        w, h = self.orig_image.size
-        self.roi_x = 0
-        self.roi_y = int(h * 0.06)
-        self.roi_w = w
-        self.roi_h = int(h * 0.14)
-        self._draw_canvas()
-
-    def _apply_middle_preset(self):
-        if not self.orig_image:
-            return
-        w, h = self.orig_image.size
-        self.roi_x = 0
-        self.roi_y = int(h * 0.44)
-        self.roi_w = w
-        self.roi_h = int(h * 0.16)
-        self._draw_canvas()
-
     def _on_mouse_down(self, event):
         self.is_dragging = True
         self.drag_start_x = event.x
@@ -688,6 +785,7 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
             self.roi_y = int((top_disp - offset_y) / self.scale_factor)
             self.roi_w = int(w_disp / self.scale_factor)
             self.roi_h = int(h_disp / self.scale_factor)
+            self._sync_blur_entries_from_roi()
 
         else:
             # CHỈNH TAY PHỤ ĐỀ: Di chuyển vị trí phụ đề bằng chuột
@@ -709,15 +807,15 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
             self.slider_margin_v.set(new_margin)
             self.lbl_margin_val.configure(text=f"{new_margin}px")
 
-        self._draw_canvas()
+        self._draw_canvas(update_entries=False)
 
     def _on_mouse_up(self, event):
         self.is_dragging = False
         if self.active_mode == "blur":
-            if self.roi_w < 10 or self.roi_h < 10:
-                self._apply_bottom_preset()
+            if (self.roi_w or 0) < 10 or (self.roi_h or 0) < 10:
+                self._apply_douyin_custom_preset()
 
-    def _draw_canvas(self):
+    def _draw_canvas(self, update_entries: bool = True):
         """Vẽ lại hình ảnh preview, vùng làm mờ và hộp phụ đề trực quan lên Canvas"""
         if not self.orig_image:
             return
@@ -736,6 +834,9 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
         disp_h = int(orig_h * self.scale_factor)
         offset_x = (c_w - disp_w) // 2
         offset_y = (c_h - disp_h) // 2
+
+        if update_entries:
+            self._sync_blur_entries_from_roi()
 
         preview_img = self.orig_image.copy()
 

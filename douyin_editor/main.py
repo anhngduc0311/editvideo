@@ -60,16 +60,20 @@ def parse_arguments() -> argparse.Namespace:
         choices=["none", "capcut_default", "white_thick_black", "white_soft_shadow", "tiktok_yellow_black", "red_white_outline", "orange_white_outline", "blue_white_outline", "green_black_outline", "badge_black_on_white", "badge_white_on_black", "badge_black_on_yellow", "badge_white_on_purple", "cyan_neon_outline", "glitch_3d_shadow", "neon_glow_pink", "neon_glow_yellow", "neon_glow_green"],
         help="Mau chu phu de CapCut (badge_white_on_black, capcut_default, tiktok_yellow_black, badge_black_on_yellow, neon_glow_pink, ...)."
     )
-    parser.add_argument("--font-size", type=int, default=18, help="Kich thuoc chu phu de.")
-    parser.add_argument("--font-name", type=str, default="Montserrat", help="Ten font chu.")
-    parser.add_argument("--margin-v", type=int, default=45, help="Khoang cach phu de tu mep duoi (pixel, mac dinh: 45).")
+    parser.add_argument("--font-size", type=int, default=22, help="Kich thuoc chu phu de (mac dinh: 22).")
+    parser.add_argument("--font-name", type=str, default="Montserrat", help="Ten font chu (mac dinh: Montserrat).")
+    parser.add_argument("--margin-v", type=int, default=160, help="Khoang cach phu de tu mep duoi (pixel, mac dinh: 160).")
     parser.add_argument("--alignment", type=int, default=2, choices=[1, 2, 3, 4, 5, 6, 7, 8, 9], help="Vi tri can le phu de ASS (2 = Bottom-Center, 5 = Mid-Center, 8 = Top-Center).")
     parser.add_argument("--no-bgm", action="store_true", help="Tat nhac nen (chi giu lai giong doc TTS).")
     parser.add_argument("--bgm-volume", type=float, default=1.0, help="Am luong nhac nen BGM goc (mac dinh: 1.0 = 100%%).")
     parser.add_argument("--separation-speed", type=str, default="turbo", choices=["turbo", "fast", "balanced", "hq"], help="Toc do tach AI MDX-Net (mac dinh: turbo).")
     parser.add_argument("--check-api", action="store_true", help="Kiem tra trang thai va Rate Limit cua AI API Key.")
-    parser.add_argument("--blur-y-ratio", type=float, default=0.72, help="Toa do Y bat dau lam mo (ty le 0.0-1.0).")
-    parser.add_argument("--blur-height-ratio", type=float, default=0.18, help="Chieu cao vung lam mo (ty le 0.0-1.0).")
+    parser.add_argument("--blur-x", type=int, default=293, help="Toa do X vung lam mo (pixel, mac dinh: 293).")
+    parser.add_argument("--blur-y", type=int, default=517, help="Toa do Y vung lam mo (pixel, mac dinh: 517).")
+    parser.add_argument("--blur-w", type=int, default=683, help="Chieu rong vung lam mo (pixel, mac dinh: 683).")
+    parser.add_argument("--blur-h", type=int, default=50, help="Chieu cao vung lam mo (pixel, mac dinh: 50).")
+    parser.add_argument("--blur-y-ratio", type=float, default=0.718, help="Toa do Y bat dau lam mo (ty le 0.0-1.0, mac dinh: 0.718).")
+    parser.add_argument("--blur-height-ratio", type=float, default=0.0694, help="Chieu cao vung lam mo (ty le 0.0-1.0, mac dinh: 0.0694).")
     parser.add_argument("--no-smart-blur", action="store_true", help="Tat lam mo thong minh (luon lam mo toan bo video).")
     parser.add_argument("--blur-pad-before", type=float, default=0.15, help="Dem thoi gian truoc cau thoai (giay, mac dinh: 0.15).")
     parser.add_argument("--blur-pad-after", type=float, default=0.20, help="Dem thoi gian sau cau thoai (giay, mac dinh: 0.20).")
@@ -147,6 +151,10 @@ def main():
         separation_speed=args.separation_speed,
         cookie_config=cookie_cfg,
         blur_region=BlurRegion(
+            x=args.blur_x,
+            y=args.blur_y,
+            width=args.blur_w,
+            height=args.blur_h,
             y_ratio=args.blur_y_ratio,
             height_ratio=args.blur_height_ratio,
             blur_power=15,

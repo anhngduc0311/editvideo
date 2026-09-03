@@ -21,14 +21,14 @@ class BlurRegion:
     Khu vực làm mờ phụ đề gốc (Bounding box).
     Có thể tự chỉnh tọa độ hoặc dùng tỷ lệ tự động (% chiều cao video).
     """
-    x: Optional[int] = None       # Tọa độ X (pixel) - None để tự động căn giữa
-    y: Optional[int] = None       # Tọa độ Y (pixel) - None để tự tính theo tỷ lệ
-    width: Optional[int] = None   # Chiều rộng vùng mờ - None để full width
-    height: Optional[int] = None  # Chiều cao vùng mờ - None để tính theo tỷ lệ
+    x: Optional[int] = 293       # Tọa độ X (pixel) - mặc định: 293
+    y: Optional[int] = 517       # Tọa độ Y (pixel) - mặc định: 517
+    width: Optional[int] = 683   # Chiều rộng vùng mờ - mặc định: 683
+    height: Optional[int] = 50   # Chiều cao vùng mờ - mặc định: 50
     
     # Tỷ lệ mặc định theo kích thước video (nếu không set pixel cứng)
-    y_ratio: float = 0.72         # Vị trí bắt đầu mờ từ 72% chiều cao video
-    height_ratio: float = 0.18    # Chiều cao vùng mờ chiếm 18% chiều cao video
+    y_ratio: float = 0.718        # Vị trí bắt đầu mờ từ 71.8% chiều cao video
+    height_ratio: float = 0.0694  # Chiều cao vùng mờ chiếm 6.94% (~50/720)
     blur_power: int = 15          # Độ mờ của filter boxblur (lpower:rpower)
     enabled: bool = True
     smart_blur: bool = True       # Làm mờ thông minh: chỉ mờ khi có phụ đề tiếng Trung, tự ẩn khi không có
@@ -45,15 +45,15 @@ class SubtitleStyle:
     Màu sắc theo định dạng ASS (&H<Alpha><Blue><Green><Red> hoặc Hex).
     """
     preset_id: str = "badge_white_on_black"
-    name: str = "Chữ trắng hộp đen (Georgia Serif)"
+    name: str = "Chữ trắng hộp đen"
     font_name: str = "Montserrat"
-    font_size: int = 26
+    font_size: int = 22
     primary_color: str = "&H00FFFFFF"    # Chữ trắng (ABGR)
     outline_color: str = "&H00000000"    # Viền đen
     back_color: str = "&H00000000"       # Hộp đen (100% opacity)
     outline_width: float = 4.5           # Độ dày hộp badge
     shadow: float = 0                    # Đổ bóng
-    margin_v: int = 45                   # Khoảng cách từ mép dưới màn hình (pixel)
+    margin_v: int = 161                  # Khoảng cách từ mép dưới màn hình (pixel, mặc định: 160)
     bold: int = 1                        # In đậm (1 = True, 0 = False)
     alignment: int = 2                   # Căn giữa dưới cùng (ASS standard = 2)
     border_style: int = 3                # 1 = Viền & Đổ bóng, 3 = Hộp chữ nhật (Badge)
