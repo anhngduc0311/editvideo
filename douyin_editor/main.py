@@ -61,7 +61,7 @@ def parse_arguments() -> argparse.Namespace:
         help="Mau chu phu de CapCut (badge_white_on_black, capcut_default, tiktok_yellow_black, badge_black_on_yellow, neon_glow_pink, ...)."
     )
     parser.add_argument("--font-size", type=int, default=18, help="Kich thuoc chu phu de.")
-    parser.add_argument("--font-name", type=str, default="Georgia", help="Ten font chu.")
+    parser.add_argument("--font-name", type=str, default="Montserrat", help="Ten font chu.")
     parser.add_argument("--margin-v", type=int, default=45, help="Khoang cach phu de tu mep duoi (pixel, mac dinh: 45).")
     parser.add_argument("--alignment", type=int, default=2, choices=[1, 2, 3, 4, 5, 6, 7, 8, 9], help="Vi tri can le phu de ASS (2 = Bottom-Center, 5 = Mid-Center, 8 = Top-Center).")
     parser.add_argument("--no-bgm", action="store_true", help="Tat nhac nen (chi giu lai giong doc TTS).")

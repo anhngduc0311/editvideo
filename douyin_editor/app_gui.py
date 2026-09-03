@@ -53,15 +53,6 @@ class DouyinEditorApp(ctk.CTk):
         self.saved_browser_name = "Edge"
         self._load_saved_settings()
 
-        # Dữ liệu phụ đề hiện tại phục vụ hiển thị & kiểm tra trên GUI
-        self.current_subtitles_data: List[Dict[str, Any]] = []
-        self.current_subtitles_stats: Dict[str, Any] = {}
-        self.current_session_work_dir: Optional[Path] = None
-        self.current_orig_srt_path: Optional[Path] = None
-        self.current_synced_srt_path: Optional[Path] = None
-        self.sub_entry_widgets: Dict[int, ctk.CTkEntry] = {}
-        self.sub_resume_event: Optional[threading.Event] = None
-
         # Cấu hình Mẫu Phụ Đề CapCut hiện tại (Mặc định: Chữ trắng hộp đen Georgia)
         self.selected_sub_preset_id = getattr(self, "saved_sub_preset", "badge_white_on_black")
         self.sub_preset_buttons: Dict[str, ctk.CTkButton] = {}
@@ -90,8 +81,6 @@ class DouyinEditorApp(ctk.CTk):
         self.saved_sub_preset = "badge_white_on_black"
         self.saved_export_res = "🔥 1080p Full HD (Chuẩn YouTube)"
         self.saved_smart_blur = True
-        self.saved_auto_switch_sub = True
-        self.saved_review_sub = False
         self.saved_topic_preset = "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)"
         if CONFIG_FILE.exists():
             try:
@@ -110,8 +99,6 @@ class DouyinEditorApp(ctk.CTk):
                 self.saved_sub_preset = data.get("subtitle_preset_id", "badge_white_on_black")
                 self.saved_export_res = data.get("export_resolution", "🔥 1080p Full HD (Chuẩn YouTube)")
                 self.saved_smart_blur = data.get("smart_blur", True)
-                self.saved_auto_switch_sub = data.get("auto_switch_sub", True)
-                self.saved_review_sub = data.get("review_sub", False)
                 self.saved_topic_preset = data.get("topic_preset", "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)")
             except Exception:
                 pass
@@ -141,8 +128,6 @@ class DouyinEditorApp(ctk.CTk):
                 "subtitle_preset_id": getattr(self, "selected_sub_preset_id", "badge_white_on_black"),
                 "export_resolution": self.cmb_export_res.get() if hasattr(self, "cmb_export_res") else "🔥 1080p Full HD (Chuẩn YouTube)",
                 "smart_blur": bool(self.chk_smart_blur.get()) if hasattr(self, "chk_smart_blur") else True,
-                "auto_switch_sub": bool(self.chk_auto_switch_sub.get()) if hasattr(self, "chk_auto_switch_sub") else True,
-                "review_sub": bool(self.chk_review_sub.get()) if hasattr(self, "chk_review_sub") else False,
                 "topic_preset": self.cmb_topic.get() if hasattr(self, "cmb_topic") else "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)",
             }
             CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -513,32 +498,7 @@ class DouyinEditorApp(ctk.CTk):
             font=ctk.CTkFont(size=12)
         )
         self.chk_interactive_roi.select()  # Mặc định bật để người dùng tự chọn
-        self.chk_interactive_roi.pack(anchor="w", padx=12, pady=(2, 4))
-
-        # Checkbox Tự động chuyển Tab Phụ Đề để kiểm tra
-        self.chk_auto_switch_sub = ctk.CTkCheckBox(
-            video_card,
-            text="💬 Tự động mở Tab Phụ Đề sau khi nhận diện để kiểm tra câu thoại",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color="#38bdf8"
-        )
-        if getattr(self, "saved_auto_switch_sub", True):
-            self.chk_auto_switch_sub.select()
-        else:
-            self.chk_auto_switch_sub.deselect()
-        self.chk_auto_switch_sub.pack(anchor="w", padx=12, pady=(2, 4))
-
-        # Checkbox Dừng lại để duyệt phụ đề trước khi render
-        self.chk_review_sub = ctk.CTkCheckBox(
-            video_card,
-            text="⏸ Dừng lại sau khi dịch & đọc TTS để tôi duyệt/sửa phụ đề trước khi xuất video",
-            font=ctk.CTkFont(size=12)
-        )
-        if getattr(self, "saved_review_sub", False):
-            self.chk_review_sub.select()
-        else:
-            self.chk_review_sub.deselect()
-        self.chk_review_sub.pack(anchor="w", padx=12, pady=(2, 6))
+        self.chk_interactive_roi.pack(anchor="w", padx=12, pady=(2, 6))
 
         # Sliders chỉnh tọa độ thủ công
         blur_row = ctk.CTkFrame(video_card, fg_color="transparent")
@@ -848,114 +808,37 @@ class DouyinEditorApp(ctk.CTk):
         self.progress_bar.set(0.0)
         self.progress_bar.pack(fill="x", padx=12, pady=(2, 6))
 
-        # TABVIEW CHO PHỤ ĐỀ & NHẬT KÝ
-        self.right_tabview = ctk.CTkTabview(right_frame, corner_radius=8)
-        self.right_tabview.grid(row=2, column=0, sticky="nsew", padx=10, pady=(2, 6))
+        # KHUNG NHẬT KÝ XỬ LÝ (CONSOLE TRỰC TIẾP - MƯỢT MÀ KHÔNG LAG)
+        log_card = ctk.CTkFrame(right_frame, corner_radius=8)
+        log_card.grid(row=2, column=0, sticky="nsew", padx=10, pady=(4, 6))
+        log_card.grid_columnconfigure(0, weight=1)
+        log_card.grid_rowconfigure(1, weight=1)
 
-        tab_sub = self.right_tabview.add("💬 Kiểm Tra Phụ Đề & Tình Trạng")
-        tab_log = self.right_tabview.add("📜 Nhật Ký Xử Lý (Console)")
+        log_header = ctk.CTkFrame(log_card, fg_color="transparent")
+        log_header.grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 4))
+        log_header.grid_columnconfigure(0, weight=1)
 
-        # ----- TAB PHỤ ĐỀ -----
-        tab_sub.grid_columnconfigure(0, weight=1)
-        tab_sub.grid_rowconfigure(3, weight=1)
-
-        # 1. Dashboard Thống Kê & Tình Trạng
-        sub_metrics_frame = ctk.CTkFrame(tab_sub, fg_color="#18181b", corner_radius=6, border_width=1, border_color="#27272a")
-        sub_metrics_frame.grid(row=0, column=0, sticky="ew", padx=2, pady=(2, 4))
-        sub_metrics_frame.grid_columnconfigure((0, 1, 2), weight=1)
-
-        self.lbl_sub_stat_count = ctk.CTkLabel(
-            sub_metrics_frame, text="🔢 Tổng: 0 câu",
-            font=ctk.CTkFont(size=13, weight="bold"), text_color="#38bdf8"
-        )
-        self.lbl_sub_stat_count.grid(row=0, column=0, padx=8, pady=4, sticky="w")
-
-        self.lbl_sub_stat_time = ctk.CTkLabel(
-            sub_metrics_frame, text="⏱ Thoại: 0.0s / 0.0s",
-            font=ctk.CTkFont(size=12), text_color="gray80"
-        )
-        self.lbl_sub_stat_time.grid(row=0, column=1, padx=4, pady=4)
-
-        self.lbl_sub_stat_badge = ctk.CTkLabel(
-            sub_metrics_frame, text="🔴 CHƯA CÓ DỮ LIỆU",
-            font=ctk.CTkFont(size=12, weight="bold"), text_color="#ef4444"
-        )
-        self.lbl_sub_stat_badge.grid(row=0, column=2, padx=8, pady=4, sticky="e")
-
-        # 2. Alert Bar
-        self.lbl_sub_alert = ctk.CTkLabel(
-            tab_sub,
-            text="ℹ️ Sau khi tải và nhận diện giọng nói, toàn bộ danh sách phụ đề Trung - Việt và tình trạng sẽ hiển thị tại đây.",
-            font=ctk.CTkFont(size=11),
-            text_color="#94a3b8",
-            wraplength=480,
-            justify="left"
-        )
-        self.lbl_sub_alert.grid(row=1, column=0, sticky="ew", padx=4, pady=(0, 4))
-
-        # 3. Toolbar thao tác
-        sub_toolbar = ctk.CTkFrame(tab_sub, fg_color="transparent")
-        sub_toolbar.grid(row=2, column=0, sticky="ew", padx=2, pady=(0, 4))
-        sub_toolbar.grid_columnconfigure(0, weight=1)
-
-        self.sub_search_entry = ctk.CTkEntry(
-            sub_toolbar,
-            placeholder_text="🔍 Tìm kiếm câu thoại...",
-            height=28,
-            font=ctk.CTkFont(size=11)
-        )
-        self.sub_search_entry.grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        self.sub_search_entry.bind("<KeyRelease>", lambda e: self._filter_subtitles_list())
-
-        btn_open_orig = ctk.CTkButton(
-            sub_toolbar, text="📂 SRT Gốc", width=75, height=28, font=ctk.CTkFont(size=11),
-            command=self._open_orig_srt_file, fg_color="#374151", hover_color="#4b5563"
-        )
-        btn_open_orig.grid(row=0, column=1, padx=2)
-
-        btn_open_synced = ctk.CTkButton(
-            sub_toolbar, text="📂 SRT Việt", width=75, height=28, font=ctk.CTkFont(size=11),
-            command=self._open_synced_srt_file, fg_color="#2563eb", hover_color="#1d4ed8"
-        )
-        btn_open_synced.grid(row=0, column=2, padx=2)
-
-        btn_copy_all = ctk.CTkButton(
-            sub_toolbar, text="📋 Copy", width=65, height=28, font=ctk.CTkFont(size=11),
-            command=self._copy_all_subtitles, fg_color="#059669", hover_color="#047857"
-        )
-        btn_copy_all.grid(row=0, column=3, padx=2)
-
-        self.btn_save_subs = ctk.CTkButton(
-            sub_toolbar, text="💾 Lưu Sửa", width=75, height=28, font=ctk.CTkFont(size=11),
-            command=self._save_edited_subtitles, fg_color="#d97706", hover_color="#b45309"
-        )
-        self.btn_save_subs.grid(row=0, column=4, padx=(2, 0))
-
-        # 4. Scrollable Container danh sách phụ đề
-        self.sub_cards_scroll = ctk.CTkScrollableFrame(tab_sub, corner_radius=6, fg_color="#09090b")
-        self.sub_cards_scroll.grid(row=3, column=0, sticky="nsew", padx=2, pady=(0, 2))
-        self.sub_cards_scroll.grid_columnconfigure(0, weight=1)
-
-        # Banner dừng lại duyệt phụ đề (ẩn mặc định)
-        self.sub_review_resume_frame = ctk.CTkFrame(tab_sub, fg_color="#1e1b4b", corner_radius=6, border_width=1, border_color="#6366f1")
-        self.btn_resume_pipeline = ctk.CTkButton(
-            self.sub_review_resume_frame,
-            text="▶ ĐÃ KIỂM TRA XONG - TIẾP TỤC RENDER VIDEO NGAY",
+        ctk.CTkLabel(
+            log_header,
+            text="📜 Nhật Ký Xử Lý Chi Tiết (Realtime Console):",
             font=ctk.CTkFont(size=13, weight="bold"),
-            height=32,
-            fg_color="#10b981",
-            hover_color="#059669",
-            command=self._resume_pipeline_after_review
+            text_color="#38bdf8"
+        ).grid(row=0, column=0, sticky="w")
+
+        btn_clear_log = ctk.CTkButton(
+            log_header,
+            text="🧹 Xóa Log",
+            width=75,
+            height=26,
+            font=ctk.CTkFont(size=11),
+            command=self._clear_logs,
+            fg_color="#374151",
+            hover_color="#4b5563"
         )
-        self.btn_resume_pipeline.pack(fill="x", padx=8, pady=6)
+        btn_clear_log.grid(row=0, column=1, sticky="e")
 
-        self._render_empty_sub_placeholder()
-
-        # ----- TAB NHẬT KÝ (LOGS) -----
-        tab_log.grid_columnconfigure(0, weight=1)
-        tab_log.grid_rowconfigure(0, weight=1)
-        self.log_textbox = ctk.CTkTextbox(tab_log, font=ctk.CTkFont(family="Consolas", size=11), activate_scrollbars=True)
-        self.log_textbox.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
+        self.log_textbox = ctk.CTkTextbox(log_card, font=ctk.CTkFont(family="Consolas", size=11), activate_scrollbars=True)
+        self.log_textbox.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
 
         # -------------------------------------------------------------
         # FOOTER / CONTROL BAR
@@ -1418,281 +1301,9 @@ class DouyinEditorApp(ctk.CTk):
 
         self.after(0, gui_update)
 
-    # -----------------------------------------------------------------
-    # SUBTITLE INSPECTOR & STATUS CHECKER HANDLERS
-    # -----------------------------------------------------------------
-    def _render_empty_sub_placeholder(self):
-        """Hiển thị trạng thái rỗng khi chưa có dữ liệu phụ đề"""
-        for widget in self.sub_cards_scroll.winfo_children():
-            widget.destroy()
-
-        placeholder_frame = ctk.CTkFrame(self.sub_cards_scroll, fg_color="#18181b", corner_radius=8, border_width=1, border_color="#27272a")
-        placeholder_frame.pack(fill="x", padx=10, pady=40)
-
-        ctk.CTkLabel(
-            placeholder_frame,
-            text="💬 CHƯA CÓ DỮ LIỆU PHỤ ĐỀ",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#94a3b8"
-        ).pack(pady=(18, 6))
-
-        ctk.CTkLabel(
-            placeholder_frame,
-            text="Nhập link Douyin và bấm 'BẮT ĐẦU XỬ LÝ VIDEO TỰ ĐỘNG'.\nDanh sách phụ đề song ngữ (Trung - Việt) kèm phân tích độ phủ sẽ tự động cập nhật tại đây!",
-            font=ctk.CTkFont(size=12),
-            text_color="gray60",
-            justify="center"
-        ).pack(padx=16, pady=(0, 18))
-
-    def _on_subtitles_callback(self, payload: dict):
-        """Nhận dữ liệu phụ đề từ pipeline thời gian thực và cập nhật lên GUI"""
-        def _update():
-            stage = payload.get("stage", "stt")
-            items = payload.get("items", [])
-            stats = payload.get("stats", {})
-            self.current_subtitles_data = items
-            self.current_subtitles_stats = stats
-            if payload.get("original_srt"):
-                self.current_orig_srt_path = Path(payload["original_srt"])
-            if payload.get("synced_srt"):
-                self.current_synced_srt_path = Path(payload["synced_srt"])
-            elif payload.get("translated_srt"):
-                self.current_synced_srt_path = Path(payload["translated_srt"])
-
-            # Cập nhật Thẻ Thống Kê (Dashboard Metrics)
-            count = len(items)
-            self.lbl_sub_stat_count.configure(text=f"🔢 Tổng: {count} câu thoại")
-            spoken_dur = stats.get("spoken_duration", 0.0)
-            total_dur = stats.get("total_duration", 0.0)
-            cov_pct = stats.get("coverage_percent", "0.0%")
-            self.lbl_sub_stat_time.configure(text=f"⏱ Thoại: {spoken_dur:.1f}s / {total_dur:.1f}s ({cov_pct})")
-
-            # Huy hiệu tình trạng
-            badge_text = stats.get("status_badge", "🟢 ĐẦY ĐỦ")
-            badge_color = "#10b981" if "🟢" in badge_text else ("#f59e0b" if "🟡" in badge_text else "#ef4444")
-            self.lbl_sub_stat_badge.configure(text=badge_text, text_color=badge_color)
-
-            # Cập nhật Alert Bar
-            warnings = stats.get("warnings", [])
-            if warnings:
-                warn_msg = f"⚠️ Lưu ý: {warnings[0]}" + (f" (+{len(warnings)-1} đoạn khác)" if len(warnings) > 1 else "")
-                self.lbl_sub_alert.configure(text=warn_msg, text_color="#fbbf24")
-            else:
-                self.lbl_sub_alert.configure(
-                    text=f"✅ Đã nhận diện đầy đủ {count} câu thoại. Tình trạng phủ âm thanh tốt ({cov_pct})!",
-                    text_color="#34d399"
-                )
-
-            # Vẽ danh sách thẻ phụ đề
-            self._render_subtitle_cards()
-
-            # Tự động chuyển Tab nếu được bật
-            if hasattr(self, "chk_auto_switch_sub") and self.chk_auto_switch_sub.get():
-                self.right_tabview.set("💬 Kiểm Tra Phụ Đề & Tình Trạng")
-
-            self._append_log(f"[PHỤ ĐỀ] Đã cập nhật {count} câu lên giao diện (Trạng thái: {stats.get('status_text', 'OK')})", "SUB")
-
-        self.after(0, _update)
-
-    def _render_subtitle_cards(self, filter_text: str = ""):
-        """Hiển thị danh sách thẻ phụ đề trong Scrollable Frame"""
-        for widget in self.sub_cards_scroll.winfo_children():
-            widget.destroy()
-
-        self.sub_entry_widgets.clear()
-
-        if not self.current_subtitles_data:
-            self._render_empty_sub_placeholder()
-            return
-
-        filter_lower = filter_text.strip().lower()
-        rendered_count = 0
-
-        for item in self.current_subtitles_data:
-            idx = item.get("index", 1)
-            orig_text = item.get("text", "")
-            trans_text = item.get("translated_text", "")
-            start_str = item.get("start_str", "")
-            end_str = item.get("end_str", "")
-            duration = item.get("duration", 0.0)
-
-            # Lọc theo từ khóa
-            if filter_lower:
-                if filter_lower not in orig_text.lower() and filter_lower not in trans_text.lower() and filter_lower not in str(idx):
-                    continue
-
-            rendered_count += 1
-            card = ctk.CTkFrame(self.sub_cards_scroll, fg_color="#18181b", corner_radius=6, border_width=1, border_color="#27272a")
-            card.pack(fill="x", padx=4, pady=3)
-            card.grid_columnconfigure(0, weight=1)
-
-            # Header thẻ: Số thứ tự + Timeline + Duration
-            header_row = ctk.CTkFrame(card, fg_color="transparent")
-            header_row.pack(fill="x", padx=8, pady=(4, 2))
-
-            lbl_idx = ctk.CTkLabel(
-                header_row,
-                text=f"#{idx:02d} • ⏱ {start_str} ➔ {end_str} ({duration:.1f}s)",
-                font=ctk.CTkFont(size=11, weight="bold"),
-                text_color="#38bdf8"
-            )
-            lbl_idx.pack(side="left")
-
-            status_lbl = ctk.CTkLabel(
-                header_row,
-                text="✔ Khớp TTS" if trans_text else "⏳ Gốc",
-                font=ctk.CTkFont(size=10, weight="bold"),
-                text_color="#34d399" if trans_text else "#94a3b8"
-            )
-            status_lbl.pack(side="right")
-
-            # Gốc (Tiếng Trung)
-            orig_lbl = ctk.CTkLabel(
-                card,
-                text=f"🇨🇳 {orig_text}",
-                font=ctk.CTkFont(size=12),
-                text_color="#e2e8f0",
-                anchor="w",
-                justify="left",
-                wraplength=470
-            )
-            orig_lbl.pack(fill="x", padx=8, pady=(0, 2))
-
-            # Dịch (Tiếng Việt) - Cho phép sửa trực tiếp
-            trans_frame = ctk.CTkFrame(card, fg_color="transparent")
-            trans_frame.pack(fill="x", padx=8, pady=(0, 6))
-
-            ctk.CTkLabel(trans_frame, text="🇻🇳", font=ctk.CTkFont(size=12)).pack(side="left", padx=(0, 4))
-            
-            entry_vn = ctk.CTkEntry(
-                trans_frame,
-                font=ctk.CTkFont(size=12),
-                height=26,
-                fg_color="#09090b",
-                border_color="#3f3f46"
-            )
-            entry_vn.pack(side="left", fill="x", expand=True)
-            if trans_text:
-                entry_vn.insert(0, trans_text)
-            else:
-                entry_vn.configure(placeholder_text="(Đang chờ dịch...)")
-
-            self.sub_entry_widgets[idx] = entry_vn
-
-        if rendered_count == 0 and filter_lower:
-            no_res = ctk.CTkLabel(
-                self.sub_cards_scroll,
-                text=f"Không tìm thấy câu thoại nào khớp với '{filter_text}'",
-                font=ctk.CTkFont(size=12),
-                text_color="gray60"
-            )
-            no_res.pack(pady=20)
-
-    def _filter_subtitles_list(self):
-        query = self.sub_search_entry.get().strip()
-        self._render_subtitle_cards(query)
-
-    def _save_edited_subtitles(self):
-        """Lưu lại các chỉnh sửa phụ đề từ các ô nhập trên giao diện vào file SRT"""
-        if not self.current_subtitles_data:
-            messagebox.showinfo("Thông báo", "Chưa có dữ liệu phụ đề để lưu!")
-            return
-
-        updated_count = 0
-        for item in self.current_subtitles_data:
-            idx = item.get("index")
-            if idx in self.sub_entry_widgets:
-                new_val = self.sub_entry_widgets[idx].get().strip()
-                if new_val:
-                    item["translated_text"] = new_val
-                    updated_count += 1
-
-        # Ghi đè vào file SRT đồng bộ
-        if self.current_synced_srt_path:
-            try:
-                blocks = []
-                for item in self.current_subtitles_data:
-                    txt = item.get("translated_text") or item.get("text", "")
-                    blocks.append(f"{item['index']}\n{item['start_str']} --> {item['end_str']}\n{txt}\n")
-                
-                self.current_synced_srt_path.write_text("\n".join(blocks).strip() + "\n", encoding="utf-8")
-                self._append_log(f"Đã lưu thành công {updated_count} câu phụ đề vào: {self.current_synced_srt_path.name}", "SUB")
-                messagebox.showinfo("Thành công", f"Đã cập nhật và lưu {updated_count} câu phụ đề vào file SRT!")
-            except Exception as e:
-                messagebox.showerror("Lỗi", f"Không thể lưu file SRT: {e}")
-        else:
-            messagebox.showinfo("Thông báo", "Đã cập nhật dữ liệu trên bộ nhớ!")
-
-    def _copy_all_subtitles(self):
-        """Sao chép toàn bộ danh sách phụ đề song ngữ vào Clipboard"""
-        if not self.current_subtitles_data:
-            messagebox.showinfo("Thông báo", "Chưa có phụ đề để sao chép!")
-            return
-
-        lines = []
-        for item in self.current_subtitles_data:
-            idx = item.get("index", 1)
-            t_range = f"{item.get('start_str')} --> {item.get('end_str')}"
-            orig = item.get("text", "")
-            trans = item.get("translated_text", "")
-            lines.append(f"#{idx} [{t_range}]\n🇨🇳 {orig}\n🇻🇳 {trans}\n")
-
-        full_text = "\n".join(lines).strip()
-        try:
-            self.clipboard_clear()
-            self.clipboard_append(full_text)
-            self._append_log(f"Đã copy toàn bộ {len(self.current_subtitles_data)} câu phụ đề vào Clipboard.", "SUB")
-            messagebox.showinfo("Đã sao chép", f"Đã copy {len(self.current_subtitles_data)} câu phụ đề vào Clipboard!")
-        except Exception as e:
-            messagebox.showerror("Lỗi", f"Không thể copy: {e}")
-
-    def _open_orig_srt_file(self):
-        if self.current_orig_srt_path and self.current_orig_srt_path.exists():
-            if sys.platform == "win32":
-                os.startfile(str(self.current_orig_srt_path))
-            else:
-                subprocess.run(["xdg-open", str(self.current_orig_srt_path)])
-        else:
-            messagebox.showinfo("Thông báo", "Chưa có file SRT tiếng Trung gốc!")
-
-    def _open_synced_srt_file(self):
-        if self.current_synced_srt_path and self.current_synced_srt_path.exists():
-            if sys.platform == "win32":
-                os.startfile(str(self.current_synced_srt_path))
-            else:
-                subprocess.run(["xdg-open", str(self.current_synced_srt_path)])
-        else:
-            messagebox.showinfo("Thông báo", "Chưa có file SRT tiếng Việt!")
-
-    def _interactive_sub_review_hook(self, session_work_dir: Path, srt_file: Path):
-        """Hook dừng pipeline lại để người dùng duyệt và sửa phụ đề trên GUI trước khi render"""
-        self.sub_resume_event = threading.Event()
-        self.current_session_work_dir = session_work_dir
-        self.current_synced_srt_path = srt_file
-
-        def show_pause():
-            self.right_tabview.set("💬 Kiểm Tra Phụ Đề & Tình Trạng")
-            self.sub_review_resume_frame.grid(row=4, column=0, sticky="ew", padx=2, pady=(4, 2))
-            self.lbl_sub_alert.configure(
-                text="⏸ TẠM DỪNG ĐỂ DUYỆT: Vui lòng kiểm tra các câu phụ đề bên dưới. Sau khi hoàn tất, nhấn nút xanh để Render!",
-                text_color="#fbbf24"
-            )
-            self._append_log("Đang tạm dừng để bạn kiểm tra & duyệt phụ đề trên GUI...", "PAUSE")
-
-        self.after(0, show_pause)
-        self.sub_resume_event.wait()
-
-        def hide_pause():
-            self.sub_review_resume_frame.grid_forget()
-
-        self.after(0, hide_pause)
-
-    def _resume_pipeline_after_review(self):
-        """Tiếp tục render sau khi người dùng bấm nút xác nhận trên GUI"""
-        self._save_edited_subtitles()
-        if self.sub_resume_event:
-            self.sub_resume_event.set()
-            self._append_log("Đã xác nhận phụ đề! Tiếp tục quy trình Master Render...", "RESUME")
+    def _clear_logs(self):
+        """Xóa trắng nội dung trong ô nhật ký"""
+        self.log_textbox.delete("1.0", "end")
 
     def _start_pipeline(self):
         if self.is_running:
@@ -1757,7 +1368,6 @@ class DouyinEditorApp(ctk.CTk):
         blur_enabled = bool(self.chk_blur.get())
         smart_blur_enabled = bool(self.chk_smart_blur.get()) if hasattr(self, "chk_smart_blur") else True
         is_interactive_roi = bool(self.chk_interactive_roi.get())
-        is_review_sub = bool(self.chk_review_sub.get()) if hasattr(self, "chk_review_sub") else False
 
         self.current_blur_region.enabled = blur_enabled
         self.current_blur_region.smart_blur = smart_blur_enabled
@@ -1894,8 +1504,6 @@ class DouyinEditorApp(ctk.CTk):
                     douyin_url_or_text=raw_url,
                     progress_callback=self._update_step_status,
                     interactive_roi_callback=interactive_roi_hook if is_interactive_roi else None,
-                    subtitles_callback=self._on_subtitles_callback,
-                    review_subtitles_callback=self._interactive_sub_review_hook if is_review_sub else None
                 )
                 self.last_output_video = final_video
 

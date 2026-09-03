@@ -46,7 +46,7 @@ class SubtitleStyle:
     """
     preset_id: str = "badge_white_on_black"
     name: str = "Chữ trắng hộp đen (Georgia Serif)"
-    font_name: str = "Georgia"
+    font_name: str = "Montserrat"
     font_size: int = 26
     primary_color: str = "&H00FFFFFF"    # Chữ trắng (ABGR)
     outline_color: str = "&H00000000"    # Viền đen
