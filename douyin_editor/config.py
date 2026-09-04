@@ -743,9 +743,11 @@ class PipelineConfig:
     video_crf: int = 18
     video_preset: str = "ultrafast"
     
-    # Audio Settings (AI Vocal Separation & BGM Preservation)
-    keep_bgm: bool = True                # Mặc định BẬT tách giọng AI & bảo tồn nhạc nền video gốc
-    bgm_volume: float = 1.00             # Giữ nguyên 100% âm lượng nhạc nền gốc
+    # Audio Settings (AI Vocal Separation & Original Audio Preservation)
+    audio_mode: str = "keep_original"    # "keep_original" (Giữ âm thanh gốc ko tách giọng 60%), "separate_bgm" (Tách giọng AI MDX-Net), "mute_original" (Tắt âm thanh gốc)
+    original_audio_volume: float = 0.60  # Âm lượng âm thanh gốc khi không tách giọng (mặc định 60% = 0.60)
+    keep_bgm: bool = True                # Mặc định BẬT bảo tồn âm thanh nền video gốc
+    bgm_volume: float = 1.00             # Giữ nguyên 100% âm lượng nhạc nền khi tách AI MDX-Net
     tts_volume: float = 1.00
     audio_ducking: bool = False
     vocal_model_name: str = "UVR-MDX-NET-Inst_HQ_3"
@@ -755,6 +757,7 @@ class PipelineConfig:
     cookie_config: CookieConfig = field(default_factory=CookieConfig)
     
     # Subtitle Styling & Blur
+    enable_subtitles: bool = True        # Đóng cứng phụ đề tiếng Việt vào video (Hardsub)
     blur_region: BlurRegion = field(default_factory=BlurRegion)
     subtitle_style: SubtitleStyle = field(default_factory=SubtitleStyle)
     tts_config: TTSConfig = field(default_factory=TTSConfig)

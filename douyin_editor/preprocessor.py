@@ -226,6 +226,73 @@ class VideoPreprocessor:
 
         return target_duration
 
+    def extract_slowed_original_audio(
+        self,
+        input_video: Path,
+        output_audio: Path,
+        sample_rate: int = 44100,
+        channels: int = 2
+    ) -> float:
+        """
+        Trích xuất toàn bộ âm thanh gốc từ video và làm chậm speed_factor với chất lượng cao (44.1kHz Stereo PCM).
+        Không cần qua mô hình tách giọng AI, hoàn thành siêu tốc trong 1-2 giây.
+        :return: target_duration_sec
+        """
+        input_video = Path(input_video).resolve()
+        output_audio = Path(output_audio).resolve()
+        output_audio.parent.mkdir(parents=True, exist_ok=True)
+
+        info = self.get_video_info(input_video)
+        duration = info["duration"]
+        has_audio = info.get("has_audio", True)
+        target_duration = duration / self.speed_factor if self.speed_factor > 0 else duration
+
+        logger.info(
+            f"[Audio Gốc 44.1k] Trích xuất toàn bộ âm thanh video gốc (Thời lượng gốc: {duration:.1f}s -> Sau chậm: {target_duration:.1f}s)..."
+        )
+
+        if has_audio:
+            # Hỗ trợ chuỗi atempo nếu speed_factor < 0.5 hoặc > 2.0
+            if 0.5 <= self.speed_factor <= 2.0:
+                filter_str = f"atempo={self.speed_factor:.4f}"
+            else:
+                factors = []
+                cur = self.speed_factor
+                while cur < 0.5:
+                    factors.append("atempo=0.5")
+                    cur /= 0.5
+                while cur > 2.0:
+                    factors.append("atempo=2.0")
+                    cur /= 2.0
+                factors.append(f"atempo={cur:.4f}")
+                filter_str = ",".join(factors)
+
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", str(input_video),
+                "-vn",
+                "-filter:a", filter_str,
+                "-acodec", "pcm_s16le",
+                "-ar", str(sample_rate),
+                "-ac", str(channels),
+                str(output_audio)
+            ]
+        else:
+            cmd = [
+                "ffmpeg", "-y",
+                "-f", "lavfi",
+                "-i", f"anullsrc=r={sample_rate}:cl=stereo",
+                "-t", f"{target_duration:.2f}",
+                "-acodec", "pcm_s16le",
+                str(output_audio)
+            ]
+
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode != 0:
+            logger.warning(f"Lỗi khi trích xuất audio gốc chất lượng cao: {res.stderr[-300:]}")
+
+        return target_duration
+
     def process(
         self,
         input_video: Path,

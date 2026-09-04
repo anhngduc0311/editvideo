@@ -65,7 +65,8 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
         video_path: Optional[Path] = None,
         initial_blur_region: Optional[BlurRegion] = None,
         initial_subtitle_style: Optional[SubtitleStyle] = None,
-        on_save_callback: Optional[Callable[[BlurRegion, SubtitleStyle], None]] = None
+        initial_enable_subtitles: bool = True,
+        on_save_callback: Optional[Callable] = None
     ):
         super().__init__(parent)
 
@@ -81,6 +82,8 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
         self.video_path = Path(video_path) if video_path else None
         self.blur_region = copy.copy(initial_blur_region) if initial_blur_region else BlurRegion()
         self.sub_style = copy.copy(initial_subtitle_style) if initial_subtitle_style else SubtitleStyle()
+        self.blur_enabled: bool = bool(getattr(self.blur_region, "enabled", True))
+        self.enable_subtitles: bool = bool(initial_enable_subtitles)
         self.on_save_callback = on_save_callback
 
         # Chế độ làm việc: "blur" (Vùng làm mờ) hoặc "subtitle" (Chỉnh tay phụ đề)
@@ -330,15 +333,35 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
         self.card_sub_ctrl = ctk.CTkFrame(right_scroll, corner_radius=8)
         self.card_sub_ctrl.pack(fill="x", padx=4, pady=4)
 
+        sub_header_row = ctk.CTkFrame(self.card_sub_ctrl, fg_color="transparent")
+        sub_header_row.pack(fill="x", padx=12, pady=(10, 4))
+
         ctk.CTkLabel(
-            self.card_sub_ctrl,
-            text="✍️ Tùy Chỉnh Phụ Đề Tiếng Việt",
+            sub_header_row,
+            text="✍️ Phụ Đề Tiếng Việt (Hardsub):",
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color="#38bdf8"
-        ).pack(anchor="w", padx=12, pady=(10, 4))
+        ).pack(side="left")
+
+        self.sw_enable_subs = ctk.CTkSwitch(
+            sub_header_row,
+            text="BẬT" if self.enable_subtitles else "TẮT",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            progress_color="#0284c7",
+            command=self._on_studio_sub_toggled
+        )
+        if self.enable_subtitles:
+            self.sw_enable_subs.select()
+        else:
+            self.sw_enable_subs.deselect()
+        self.sw_enable_subs.pack(side="right")
+
+        # Container chứa các tùy chỉnh phụ đề (ẩn/hiện theo switch)
+        self.studio_sub_container = ctk.CTkFrame(self.card_sub_ctrl, fg_color="transparent")
+        self.studio_sub_container.pack(fill="x", padx=0, pady=0)
 
         # Vị trí Margin V (Khoảng cách mép dưới)
-        margin_header = ctk.CTkFrame(self.card_sub_ctrl, fg_color="transparent")
+        margin_header = ctk.CTkFrame(self.studio_sub_container, fg_color="transparent")
         margin_header.pack(fill="x", padx=12, pady=(2, 0))
         ctk.CTkLabel(margin_header, text="📏 Vị trí độ cao (Margin V):", font=ctk.CTkFont(size=12)).pack(side="left")
         self.lbl_margin_val = ctk.CTkLabel(
@@ -350,7 +373,7 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
         self.lbl_margin_val.pack(side="right")
 
         self.slider_margin_v = ctk.CTkSlider(
-            self.card_sub_ctrl,
+            self.studio_sub_container,
             from_=10,
             to=600,
             number_of_steps=118,
@@ -360,9 +383,9 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
         self.slider_margin_v.pack(fill="x", padx=12, pady=(2, 6))
 
         # Căn lề Alignment
-        ctk.CTkLabel(self.card_sub_ctrl, text="📐 Căn lề vị trí:", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=12, pady=(2, 2))
+        ctk.CTkLabel(self.studio_sub_container, text="📐 Căn lề vị trí:", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=12, pady=(2, 2))
         self.seg_alignment = ctk.CTkSegmentedButton(
-            self.card_sub_ctrl,
+            self.studio_sub_container,
             values=["⬇️ Dưới cùng", "⏸️ Giữa màn hình", "⬆️ Trên cùng"],
             command=self._on_alignment_changed,
             selected_color="#2563eb",
@@ -377,7 +400,7 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
         self.seg_alignment.pack(fill="x", padx=12, pady=(0, 8))
 
         # Font chữ & Cỡ chữ
-        font_row = ctk.CTkFrame(self.card_sub_ctrl, fg_color="transparent")
+        font_row = ctk.CTkFrame(self.studio_sub_container, fg_color="transparent")
         font_row.pack(fill="x", padx=12, pady=2)
         font_row.grid_columnconfigure((0, 1), weight=1)
 
@@ -401,12 +424,12 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
 
         # Mẫu chữ CapCut Presets
         ctk.CTkLabel(
-            self.card_sub_ctrl,
+            self.studio_sub_container,
             text="🎨 Mẫu chữ CapCut:",
             font=ctk.CTkFont(size=12, weight="bold")
         ).pack(anchor="w", padx=12, pady=(8, 4))
 
-        preset_grid = ctk.CTkFrame(self.card_sub_ctrl, fg_color="#18181b", corner_radius=6)
+        preset_grid = ctk.CTkFrame(self.studio_sub_container, fg_color="#18181b", corner_radius=6)
         preset_grid.pack(fill="x", padx=12, pady=(0, 8))
         for c in range(6):
             preset_grid.grid_columnconfigure(c, weight=1)
@@ -434,7 +457,7 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
             self.preset_buttons[p_id] = btn
 
         self.lbl_selected_preset = ctk.CTkLabel(
-            self.card_sub_ctrl,
+            self.studio_sub_container,
             text=f"Mẫu: {self.sub_style.name}",
             font=ctk.CTkFont(size=11),
             text_color="gray70"
@@ -442,8 +465,8 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
         self.lbl_selected_preset.pack(anchor="w", padx=12, pady=(0, 6))
 
         # Test Text Preview Input
-        ctk.CTkLabel(self.card_sub_ctrl, text="💬 Câu chữ xem thử:").pack(anchor="w", padx=12, pady=(2, 2))
-        self.entry_sample_text = ctk.CTkEntry(self.card_sub_ctrl, height=28)
+        ctk.CTkLabel(self.studio_sub_container, text="💬 Câu chữ xem thử:").pack(anchor="w", padx=12, pady=(2, 2))
+        self.entry_sample_text = ctk.CTkEntry(self.studio_sub_container, height=28)
         self.entry_sample_text.insert(0, self.sample_text)
         self.entry_sample_text.pack(fill="x", padx=12, pady=(0, 10))
         self.entry_sample_text.bind("<KeyRelease>", self._on_sample_text_changed)
@@ -452,15 +475,35 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
         self.card_blur_ctrl = ctk.CTkFrame(right_scroll, corner_radius=8)
         self.card_blur_ctrl.pack(fill="x", padx=4, pady=4)
 
+        blur_header_row = ctk.CTkFrame(self.card_blur_ctrl, fg_color="transparent")
+        blur_header_row.pack(fill="x", padx=12, pady=(10, 4))
+
         ctk.CTkLabel(
-            self.card_blur_ctrl,
-            text="🟥 Vùng Làm Mờ Phụ Đề Gốc",
+            blur_header_row,
+            text="🟥 Làm Mờ Sub Gốc (Boxblur):",
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color="#ef4444"
-        ).pack(anchor="w", padx=12, pady=(10, 4))
+        ).pack(side="left")
+
+        self.sw_enable_blur = ctk.CTkSwitch(
+            blur_header_row,
+            text="BẬT" if self.blur_enabled else "TẮT",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            progress_color="#ef4444",
+            command=self._on_studio_blur_toggled
+        )
+        if self.blur_enabled:
+            self.sw_enable_blur.select()
+        else:
+            self.sw_enable_blur.deselect()
+        self.sw_enable_blur.pack(side="right")
+
+        # Container chứa các tùy chỉnh vùng làm mờ
+        self.studio_blur_container = ctk.CTkFrame(self.card_blur_ctrl, fg_color="transparent")
+        self.studio_blur_container.pack(fill="x", padx=0, pady=0)
 
         # Preset Buttons Vùng Mờ
-        blur_preset_row = ctk.CTkFrame(self.card_blur_ctrl, fg_color="transparent")
+        blur_preset_row = ctk.CTkFrame(self.studio_blur_container, fg_color="transparent")
         blur_preset_row.pack(fill="x", padx=12, pady=(2, 4))
 
         ctk.CTkButton(blur_preset_row, text="📍 Đáy", width=58, height=26, fg_color="#334155", hover_color="#475569", command=self._apply_bottom_preset).pack(side="left", padx=(0, 2))
@@ -469,7 +512,7 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
         ctk.CTkButton(blur_preset_row, text="🎯 Chuẩn Douyin", width=110, height=26, fg_color="#0284c7", hover_color="#0369a1", font=ctk.CTkFont(size=11, weight="bold"), command=self._apply_douyin_custom_preset).pack(side="left", padx=(2, 0))
 
         # Ô nhập tọa độ tùy chỉnh (Custom Pixel Coordinates: X, Y, W, H)
-        coords_input_grid = ctk.CTkFrame(self.card_blur_ctrl, fg_color="#18181b", corner_radius=6)
+        coords_input_grid = ctk.CTkFrame(self.studio_blur_container, fg_color="#18181b", corner_radius=6)
         coords_input_grid.pack(fill="x", padx=12, pady=(4, 4))
         for col in range(4):
             coords_input_grid.grid_columnconfigure(col, weight=1)
@@ -496,7 +539,7 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
 
         # Thông số vùng mờ
         self.lbl_blur_info = ctk.CTkLabel(
-            self.card_blur_ctrl,
+            self.studio_blur_container,
             text=f"Tọa độ: X={self.roi_x or 293}, Y={self.roi_y or 517}, W={self.roi_w or 683}, H={self.roi_h or 50} (Y=71.8%)",
             font=ctk.CTkFont(family="Consolas", size=11),
             text_color="gray70"
@@ -815,6 +858,18 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
             if (self.roi_w or 0) < 10 or (self.roi_h or 0) < 10:
                 self._apply_douyin_custom_preset()
 
+    def _on_studio_sub_toggled(self):
+        """Xử lý bật/tắt phụ đề tiếng Việt trong Studio"""
+        self.enable_subtitles = bool(self.sw_enable_subs.get())
+        self.sw_enable_subs.configure(text="BẬT" if self.enable_subtitles else "TẮT")
+        self._draw_canvas()
+
+    def _on_studio_blur_toggled(self):
+        """Xử lý bật/tắt làm mờ phụ đề gốc trong Studio"""
+        self.blur_enabled = bool(self.sw_enable_blur.get())
+        self.sw_enable_blur.configure(text="BẬT" if self.blur_enabled else "TẮT")
+        self._draw_canvas()
+
     def _draw_canvas(self, update_entries: bool = True):
         """Vẽ lại hình ảnh preview, vùng làm mờ và hộp phụ đề trực quan lên Canvas"""
         if not self.orig_image:
@@ -840,8 +895,8 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
 
         preview_img = self.orig_image.copy()
 
-        # 1. Làm mờ vùng ROI
-        if self.roi_x is not None and self.roi_y is not None and self.roi_w and self.roi_h:
+        # 1. Làm mờ vùng ROI (Chỉ làm mờ nếu blur_enabled là True)
+        if self.blur_enabled and self.roi_x is not None and self.roi_y is not None and self.roi_w and self.roi_h:
             rx = max(0, min(self.roi_x, orig_w - 1))
             ry = max(0, min(self.roi_y, orig_h - 1))
             rw = max(1, min(self.roi_w, orig_w - rx))
@@ -857,7 +912,7 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
         self.canvas.delete("all")
         self.canvas.create_image(offset_x, offset_y, anchor="nw", image=self.photo_img)
 
-        # 2. Vẽ viền Bounding Box cho Vùng Làm Mờ (Màu đỏ)
+        # 2. Vẽ viền Bounding Box cho Vùng Làm Mờ
         if self.roi_x is not None and self.roi_y is not None and self.roi_w and self.roi_h:
             bx1 = offset_x + int(self.roi_x * self.scale_factor)
             by1 = offset_y + int(self.roi_y * self.scale_factor)
@@ -865,106 +920,119 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
             by2 = by1 + int(self.roi_h * self.scale_factor)
 
             is_blur_active = (self.active_mode == "blur")
-            border_col = "#ef4444" if is_blur_active else "#991b1b"
-            width_val = 2 if is_blur_active else 1
+            if self.blur_enabled:
+                border_col = "#ef4444" if is_blur_active else "#991b1b"
+                width_val = 2 if is_blur_active else 1
+                self.canvas.create_rectangle(bx1 - 1, by1 - 1, bx2 + 1, by2 + 1, outline="#000000", width=width_val + 1)
+                self.canvas.create_rectangle(bx1, by1, bx2, by2, outline=border_col, width=width_val, dash=(4, 2) if not is_blur_active else ())
 
-            self.canvas.create_rectangle(bx1 - 1, by1 - 1, bx2 + 1, by2 + 1, outline="#000000", width=width_val + 1)
-            self.canvas.create_rectangle(bx1, by1, bx2, by2, outline=border_col, width=width_val, dash=(4, 2) if not is_blur_active else ())
-
-            # Label tag vùng mờ
-            self.canvas.create_rectangle(bx1, by1 - 20, bx1 + 130, by1, fill=border_col, outline="")
-            self.canvas.create_text(bx1 + 65, by1 - 10, text="VÙNG LÀM MỜ GỐC", fill="#ffffff", font=("Arial", 8, "bold"))
+                # Label tag vùng mờ
+                self.canvas.create_rectangle(bx1, by1 - 20, bx1 + 130, by1, fill=border_col, outline="")
+                self.canvas.create_text(bx1 + 65, by1 - 10, text="VÙNG LÀM MỜ GỐC", fill="#ffffff", font=("Arial", 8, "bold"))
+            else:
+                # Trạng thái ĐÃ TẮT LÀM MỜ
+                border_col = "#6b7280"
+                self.canvas.create_rectangle(bx1, by1, bx2, by2, outline=border_col, width=1, dash=(3, 3))
+                self.canvas.create_rectangle(bx1, by1 - 18, bx1 + 140, by1, fill="#374151", outline="")
+                self.canvas.create_text(bx1 + 70, by1 - 9, text="⭕ ĐÃ TẮT LÀM MỜ", fill="#9ca3af", font=("Arial", 8, "bold"))
 
             # Cập nhật Label thông số
+            status_text = "" if self.blur_enabled else " [TẮT]"
             self.lbl_blur_info.configure(
-                text=f"Tọa độ: X={self.roi_x}, Y={self.roi_y}, W={self.roi_w}, H={self.roi_h} (Y={self.roi_y/orig_h*100:.1f}%)"
+                text=f"Tọa độ{status_text}: X={self.roi_x}, Y={self.roi_y}, W={self.roi_w}, H={self.roi_h} (Y={self.roi_y/orig_h*100:.1f}%)"
             )
 
         # 3. Vẽ HỘP PHỤ ĐỀ TIẾNG VIỆT ĐƯỢC ĐỊNH VỊ CHÍNH XÁC (Màu Cyan / Kiểu Chữ Thật)
-        # Tính kích thước hiệu dụng và tọa độ Y của phụ đề trên video gốc
-        sub_font_size = self.sub_style.font_size
-        sub_margin_v = self.sub_style.margin_v
+        if self.enable_subtitles:
+            # Tính kích thước hiệu dụng và tọa độ Y của phụ đề trên video gốc
+            sub_font_size = self.sub_style.font_size
+            sub_margin_v = self.sub_style.margin_v
 
-        is_landscape = (orig_w >= orig_h)
-        base_h = 720.0 if is_landscape else 1280.0
-        font_multiplier = 1.45 if is_landscape else 1.75
-        effective_font_size = max(14, int(round(sub_font_size * (orig_h / base_h) * font_multiplier)))
+            is_landscape = (orig_w >= orig_h)
+            base_h = 720.0 if is_landscape else 1280.0
+            font_multiplier = 1.45 if is_landscape else 1.75
+            effective_font_size = max(14, int(round(sub_font_size * (orig_h / base_h) * font_multiplier)))
 
-        if self.sub_style.alignment == 8:
-            # Top
-            sub_orig_y = sub_margin_v + effective_font_size // 2
-        elif self.sub_style.alignment == 5:
-            # Middle
-            sub_orig_y = orig_h // 2
-        else:
-            # Bottom (mặc định)
-            sub_orig_y = orig_h - sub_margin_v - effective_font_size // 2
+            if self.sub_style.alignment == 8:
+                # Top
+                sub_orig_y = sub_margin_v + effective_font_size // 2
+            elif self.sub_style.alignment == 5:
+                # Middle
+                sub_orig_y = orig_h // 2
+            else:
+                # Bottom (mặc định)
+                sub_orig_y = orig_h - sub_margin_v - effective_font_size // 2
 
-        sub_disp_y = offset_y + int(sub_orig_y * self.scale_factor)
-        sub_disp_x = offset_x + disp_w // 2
+            sub_disp_y = offset_y + int(sub_orig_y * self.scale_factor)
+            sub_disp_x = offset_x + disp_w // 2
 
-        # Lấy màu và kiểu dáng thật từ SubtitleStyle
-        fg_hex = ass_to_hex(self.sub_style.primary_color, "#ffffff")
-        outline_hex = ass_to_hex(self.sub_style.outline_color, "#000000")
-        bg_badge_hex = ass_to_hex(self.sub_style.back_color, "#000000")
-        is_badge = (getattr(self.sub_style, "border_style", 1) == 3)
-        font_size_disp = max(12, min(48, int(effective_font_size * self.scale_factor)))
+            # Lấy màu và kiểu dáng thật từ SubtitleStyle
+            fg_hex = ass_to_hex(self.sub_style.primary_color, "#ffffff")
+            outline_hex = ass_to_hex(self.sub_style.outline_color, "#000000")
+            bg_badge_hex = ass_to_hex(self.sub_style.back_color, "#000000")
+            is_badge = (getattr(self.sub_style, "border_style", 1) == 3)
+            font_size_disp = max(12, min(48, int(effective_font_size * self.scale_factor)))
 
-        text_to_draw = self.sample_text if self.sample_text.strip() else "[ Phụ đề Tiếng Việt ]"
-        font_family = self.sub_style.font_name or "Georgia"
+            text_to_draw = self.sample_text if self.sample_text.strip() else "[ Phụ đề Tiếng Việt ]"
+            font_family = self.sub_style.font_name or "Georgia"
 
-        # Ước lượng kích thước hộp chữ
-        char_count = len(text_to_draw)
-        approx_w = int(char_count * font_size_disp * 0.58) + 24
-        approx_h = int(font_size_disp * 1.5) + 8
+            # Ước lượng kích thước hộp chữ
+            char_count = len(text_to_draw)
+            approx_w = int(char_count * font_size_disp * 0.58) + 24
+            approx_h = int(font_size_disp * 1.5) + 8
 
-        sub_box_x1 = max(offset_x + 4, sub_disp_x - approx_w // 2)
-        sub_box_y1 = sub_disp_y - approx_h // 2
-        sub_box_x2 = min(offset_x + disp_w - 4, sub_disp_x + approx_w // 2)
-        sub_box_y2 = sub_disp_y + approx_h // 2
+            sub_box_x1 = max(offset_x + 4, sub_disp_x - approx_w // 2)
+            sub_box_y1 = sub_disp_y - approx_h // 2
+            sub_box_x2 = min(offset_x + disp_w - 4, sub_disp_x + approx_w // 2)
+            sub_box_y2 = sub_disp_y + approx_h // 2
 
-        is_sub_active = (self.active_mode == "subtitle")
+            is_sub_active = (self.active_mode == "subtitle")
 
-        # Vẽ nền Badge nếu có
-        if is_badge:
-            self.canvas.create_rectangle(
-                sub_box_x1, sub_box_y1, sub_box_x2, sub_box_y2,
-                fill=bg_badge_hex, outline=""
-            )
-
-        # Vẽ bóng / viền chữ mô phỏng
-        if not is_badge and self.sub_style.outline_width > 0:
-            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, 1)]:
-                self.canvas.create_text(
-                    sub_disp_x + dx, sub_disp_y + dy,
-                    text=text_to_draw,
-                    fill=outline_hex,
-                    font=(font_family, font_size_disp, "bold" if self.sub_style.bold else "normal")
+            # Vẽ nền Badge nếu có
+            if is_badge:
+                self.canvas.create_rectangle(
+                    sub_box_x1, sub_box_y1, sub_box_x2, sub_box_y2,
+                    fill=bg_badge_hex, outline=""
                 )
 
-        # Vẽ văn bản phụ đề chính
-        self.canvas.create_text(
-            sub_disp_x, sub_disp_y,
-            text=text_to_draw,
-            fill=fg_hex,
-            font=(font_family, font_size_disp, "bold" if self.sub_style.bold else "normal")
-        )
+            # Vẽ bóng / viền chữ mô phỏng
+            if not is_badge and self.sub_style.outline_width > 0:
+                for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, 1)]:
+                    self.canvas.create_text(
+                        sub_disp_x + dx, sub_disp_y + dy,
+                        text=text_to_draw,
+                        fill=outline_hex,
+                        font=(font_family, font_size_disp, "bold" if self.sub_style.bold else "normal")
+                    )
 
-        # Vẽ khung chọn tương tác cho Phụ Đề
-        sub_border_col = "#38bdf8" if is_sub_active else "#0284c7"
-        self.canvas.create_rectangle(
-            sub_box_x1 - 2, sub_box_y1 - 2, sub_box_x2 + 2, sub_box_y2 + 2,
-            outline=sub_border_col,
-            width=2 if is_sub_active else 1,
-            dash=(3, 2) if not is_sub_active else ()
-        )
+            # Vẽ văn bản phụ đề chính
+            self.canvas.create_text(
+                sub_disp_x, sub_disp_y,
+                text=text_to_draw,
+                fill=fg_hex,
+                font=(font_family, font_size_disp, "bold" if self.sub_style.bold else "normal")
+            )
 
-        # Tag nhãn phụ đề
-        if is_sub_active:
-            tag_text = "✋ VỊ TRÍ PHỤ ĐỀ (KÉO CHUỘT ĐỂ DI CHUYỂN)"
-            tag_w = 230
-            self.canvas.create_rectangle(sub_box_x1 - 2, sub_box_y1 - 20, sub_box_x1 + tag_w, sub_box_y1 - 2, fill="#0284c7", outline="")
-            self.canvas.create_text(sub_box_x1 + tag_w // 2, sub_box_y1 - 11, text=tag_text, fill="#ffffff", font=("Arial", 8, "bold"))
+            # Vẽ khung chọn tương tác cho Phụ Đề
+            sub_border_col = "#38bdf8" if is_sub_active else "#0284c7"
+            self.canvas.create_rectangle(
+                sub_box_x1 - 2, sub_box_y1 - 2, sub_box_x2 + 2, sub_box_y2 + 2,
+                outline=sub_border_col,
+                width=2 if is_sub_active else 1,
+                dash=(3, 2) if not is_sub_active else ()
+            )
+
+            # Tag nhãn phụ đề
+            if is_sub_active:
+                tag_text = "✋ VỊ TRÍ PHỤ ĐỀ (KÉO CHUỘT ĐỂ DI CHUYỂN)"
+                tag_w = 230
+                self.canvas.create_rectangle(sub_box_x1 - 2, sub_box_y1 - 20, sub_box_x1 + tag_w, sub_box_y1 - 2, fill="#0284c7", outline="")
+                self.canvas.create_text(sub_box_x1 + tag_w // 2, sub_box_y1 - 11, text=tag_text, fill="#ffffff", font=("Arial", 8, "bold"))
+        else:
+            # Hiển thị thông báo nhỏ nếu đã tắt phụ đề
+            if self.active_mode == "subtitle":
+                self.canvas.create_rectangle(disp_w // 2 - 120 + offset_x, disp_h - 40 + offset_y, disp_w // 2 + 120 + offset_x, disp_h - 10 + offset_y, fill="#1f2937", outline="#4b5563")
+                self.canvas.create_text(disp_w // 2 + offset_x, disp_h - 25 + offset_y, text="⭕ ĐÃ TẮT ĐÓNG PHỤ ĐỀ HARDSUB", fill="#9ca3af", font=("Arial", 9, "bold"))
 
     def _save_and_close(self):
         """Lưu cấu hình vùng làm mờ và kiểu dáng phụ đề đã chỉnh tay"""
@@ -980,7 +1048,7 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
             y_ratio=y_ratio,
             height_ratio=height_ratio,
             blur_power=15,
-            enabled=True,
+            enabled=self.blur_enabled,
             smart_blur=getattr(self.blur_region, "smart_blur", True),
             pad_before=getattr(self.blur_region, "pad_before", 0.15),
             pad_after=getattr(self.blur_region, "pad_after", 0.20),
@@ -990,10 +1058,12 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
         saved_style = copy.copy(self.sub_style)
 
         if self.on_save_callback:
-            # Hỗ trợ cả 2 dạng callback: nhận (region, style) hoặc chỉ nhận (region)
             try:
-                self.on_save_callback(saved_region, saved_style)
+                self.on_save_callback(saved_region, saved_style, self.enable_subtitles)
             except TypeError:
-                self.on_save_callback(saved_region)
+                try:
+                    self.on_save_callback(saved_region, saved_style)
+                except TypeError:
+                    self.on_save_callback(saved_region)
 
         self.destroy()

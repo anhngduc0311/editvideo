@@ -62,7 +62,8 @@ class DouyinAutoPipeline:
         table.add_row("Tốc độ video (Speed)", f"{self.config.speed_factor}x (Chậm {int((1-self.config.speed_factor)*100)}%)")
         table.add_row("Tốc độ xuất bản", f"{getattr(self.config, 'final_speed', 1.20)}x")
         table.add_row("Độ phân giải xuất", f"{getattr(self.config, 'export_resolution', '1080p').upper()} (Chuẩn Full HD)")
-        table.add_row("Vùng mờ Sub gốc (Blur)", f"Y: {self.config.blur_region.y_ratio*100:.0f}% | Height: {self.config.blur_region.height_ratio*100:.0f}%")
+        blur_status = f"Y: {self.config.blur_region.y_ratio*100:.0f}% | Height: {self.config.blur_region.height_ratio*100:.0f}%" if self.config.blur_region.enabled else "Tắt (Không làm mờ)"
+        table.add_row("Vùng mờ Sub gốc (Blur)", blur_status)
         if getattr(self.config, "llm_provider", "deepseek") == "chatgpt_cookie":
             ai_info = f"ChatGPT Web Cookie ({getattr(self.config, 'chatgpt_model_name', 'auto')})"
         else:
@@ -74,13 +75,21 @@ class DouyinAutoPipeline:
             topic_info += " (+ Ghi chú kịch bản)"
         table.add_row("Chủ đề dịch thuật", topic_info)
         table.add_row("Giọng đọc tiếng Việt (TTS)", self.config.tts_config.voice)
-        table.add_row("Font chữ Hardsub", f"{self.config.subtitle_style.font_name} (Size: {self.config.subtitle_style.font_size}px)")
+        sub_status = f"{self.config.subtitle_style.font_name} (Size: {self.config.subtitle_style.font_size}px)" if getattr(self.config, "enable_subtitles", True) else "Tắt (Không đóng phụ đề)"
+        table.add_row("Phụ đề Hardsub", sub_status)
         
-        sep_status = f"Bật AI MDX-Net ({self.config.separation_speed.upper()})" if self.config.keep_bgm else "Tắt (Mute)"
-        table.add_row("Tách giọng gốc / BGM", sep_status)
-        table.add_row("Âm lượng BGM gốc", f"{int(self.config.bgm_volume * 100)}% (Giữ nguyên âm lượng gốc)")
+        audio_mode = getattr(self.config, "audio_mode", "keep_original")
+        if audio_mode == "keep_original":
+            orig_vol_pct = int(getattr(self.config, "original_audio_volume", 0.60) * 100)
+            table.add_row("Âm thanh video gốc", f"Giữ nguyên (Ko tách giọng) - Âm lượng {orig_vol_pct}%")
+        elif audio_mode == "separate_bgm" or (audio_mode is None and self.config.keep_bgm):
+            sep_status = f"Bật AI MDX-Net ({self.config.separation_speed.upper()})"
+            table.add_row("Tách giọng gốc / BGM", sep_status)
+            table.add_row("Âm lượng BGM gốc", f"{int(self.config.bgm_volume * 100)}% (Nhạc nền tách AI)")
+        else:
+            table.add_row("Âm thanh nền", "Tắt (Chỉ giữ giọng đọc AI TTS)")
 
-        console.print(Panel(table, title="[bold yellow]🚀 DOUYIN AUTO VIDEO EDITING PIPELINE (MDX-NET AI)[/bold yellow]", expand=False))
+        console.print(Panel(table, title="[bold yellow]🚀 DOUYIN AUTO VIDEO EDITING PIPELINE[/bold yellow]", expand=False))
 
     def run(
         self,
@@ -127,14 +136,15 @@ class DouyinAutoPipeline:
             if interactive_roi_callback:
                 notify(2, "Bước 2: Chỉnh sửa trực quan", "Vui lòng khoanh vùng làm mờ & chỉnh vị trí phụ đề trên cửa sổ xem trước...")
                 chosen_res = interactive_roi_callback(raw_video, self.config.blur_region, self.config.subtitle_style)
-                if isinstance(chosen_res, tuple) and len(chosen_res) == 2:
-                    chosen_region, chosen_style = chosen_res
-                    if chosen_region:
-                        self.config.blur_region = chosen_region
-                        self.preprocessor.blur_config = chosen_region
-                    if chosen_style:
-                        self.config.subtitle_style = chosen_style
-                        self.burner.style = chosen_style
+                if isinstance(chosen_res, tuple):
+                    if len(chosen_res) >= 1 and chosen_res[0]:
+                        self.config.blur_region = chosen_res[0]
+                        self.preprocessor.blur_config = chosen_res[0]
+                    if len(chosen_res) >= 2 and chosen_res[1]:
+                        self.config.subtitle_style = chosen_res[1]
+                        self.burner.style = chosen_res[1]
+                    if len(chosen_res) >= 3 and chosen_res[2] is not None:
+                        self.config.enable_subtitles = bool(chosen_res[2])
                 elif chosen_res:
                     self.config.blur_region = chosen_res
                     self.preprocessor.blur_config = chosen_res
@@ -157,11 +167,31 @@ class DouyinAutoPipeline:
             total_duration = orig_duration / self.config.speed_factor if self.config.speed_factor > 0 else orig_duration
 
             # ==========================================
-            # BƯỚC 2: TÁCH GIỌNG AI MDX-NET, BGM 0.70x & WHISPER STT
+            # BƯỚC 2: XỬ LÝ ÂM THANH (GIỮ NGUYÊN GỐC / TÁCH BGM) & WHISPER STT
             # ==========================================
             bgm_track_path: Optional[Path] = None
+            audio_mode = getattr(self.config, "audio_mode", "keep_original")
+            if not self.config.keep_bgm:
+                audio_mode = "mute_original"
 
-            if self.config.keep_bgm:
+            if audio_mode == "keep_original":
+                orig_vol_pct = int(getattr(self.config, "original_audio_volume", 0.60) * 100)
+                notify(2, "Bước 2: Trích Xuất Âm Thanh Gốc", f"Đang trích xuất âm thanh gốc 0.70x (không tách giọng, âm lượng {orig_vol_pct}%)...")
+                console.print(f"[bold cyan]▶ BƯỚC 2: Giữ nguyên âm thanh video gốc 0.70x (Không tách giọng, âm lượng {orig_vol_pct}%)...[/bold cyan]")
+                
+                orig_slowed_audio = session_work_dir / f"{video_id}_orig_slowed_44k.wav"
+                self.preprocessor.extract_slowed_original_audio(
+                    input_video=raw_video,
+                    output_audio=orig_slowed_audio,
+                    sample_rate=44100,
+                    channels=2
+                )
+                bgm_track_path = orig_slowed_audio
+                whisper_audio_source = orig_slowed_audio
+                # Đặt âm lượng hòa âm cho compositor
+                self.config.bgm_volume = getattr(self.config, "original_audio_volume", 0.60)
+
+            elif audio_mode == "separate_bgm":
                 notify(2, "Bước 2: Tách Giọng AI MDX-Net", "Đang bóc tách nhạc nền gốc ra MP3 320k & giọng nói tiếng Trung...")
                 console.print("[bold cyan]▶ BƯỚC 2: Tách giọng AI MDX-Net -> Xuất BGM MP3 320k & Làm chậm 0.70x (100% âm lượng)...[/bold cyan]")
                 
@@ -174,7 +204,8 @@ class DouyinAutoPipeline:
                 )
                 bgm_track_path = bgm_slowed
                 whisper_audio_source = vocals_slowed
-            else:
+
+            else:  # "mute_original"
                 notify(2, "Bước 2: Trích xuất Audio Siêu Tốc", f"Đang trích xuất audio và giảm tốc độ {self.config.speed_factor}x...")
                 extracted_audio = session_work_dir / f"{video_id}_slowed_audio.wav"
                 self.preprocessor.extract_audio_for_stt(
@@ -184,8 +215,8 @@ class DouyinAutoPipeline:
                 bgm_track_path = None
                 whisper_audio_source = extracted_audio
 
-            notify(2, "Bước 2: Local Speech-to-Text", "Đang nhận diện giọng nói tiếng Trung qua Local STT Engine (trên track sạch)...")
-            console.print("[bold cyan]▶ BƯỚC 2 (tiếp): Local STT nhận diện giọng nói tiếng Trung trên track Vocals sạch -> SRT...[/bold cyan]")
+            notify(2, "Bước 2: Local Speech-to-Text", "Đang nhận diện giọng nói tiếng Trung qua Local STT Engine...")
+            console.print("[bold cyan]▶ BƯỚC 2 (tiếp): Local STT nhận diện giọng nói tiếng Trung -> SRT...[/bold cyan]")
             original_sub_items = self.transcriber.transcribe(
                 audio_path=whisper_audio_source,
                 output_srt=original_srt
@@ -282,8 +313,10 @@ class DouyinAutoPipeline:
             # BƯỚC 5, 6, 7 & 8: SINGLE-PASS MASTER RENDER (GỘP TẤT CẢ TRONG 1 LẦN RENDER DUY NHẤT)
             # ==========================================
             sub_count = len(synced_vn_subtitles) if synced_vn_subtitles else len(raw_vn_subtitles)
-            notify(6, "Bước Cuối: Master Render 1-Pass", f"Đang làm chậm {self.config.speed_factor:.2f}x, làm mờ sub cũ, đóng {sub_count} câu phụ đề & mix BGM (100% vol)...")
-            console.print(f"[bold cyan]▶ BƯỚC CUỐI: Single-Pass Master Render (0.70x + Blur + Hardsub {sub_count} câu + Lồng tiếng CapCut & BGM 100% âm lượng)...[/bold cyan]")
+            blur_status_str = "BẬT" if self.config.blur_region.enabled else "TẮT"
+            sub_status_str = f"BẬT ({sub_count} câu)" if getattr(self.config, "enable_subtitles", True) else "TẮT"
+            notify(6, "Bước Cuối: Master Render 1-Pass", f"Đang render (Làm mờ: {blur_status_str} | Phụ đề: {sub_status_str} | Tốc độ {getattr(self.config, 'final_speed', 1.2):.2f}x)...")
+            console.print(f"[bold cyan]▶ BƯỚC CUỐI: Single-Pass Master Render (Làm mờ: {blur_status_str} | Phụ đề: {sub_status_str} | Lồng tiếng CapCut & Audio gốc)...[/bold cyan]")
             final_video = self.compositor.render_single_pass_master(
                 raw_video_path=raw_video,
                 srt_file=synced_vietnamese_srt if synced_vietnamese_srt.exists() else raw_vietnamese_srt,

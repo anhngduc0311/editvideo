@@ -36,7 +36,6 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument("-u", "--url", type=str, help="Link video Douyin hoac chuoi chia se.")
     parser.add_argument("--provider", type=str, default="deepseek", choices=["deepseek", "gemini"], help="AI Provider dich thuat (deepseek hoac gemini).")
-    parser.add_argument("--topic", type=str, default="minecraft_kids", choices=["minecraft_kids", "gaming_general", "comedy_entertainment", "general"], help="Chu de dich thuat (mac dinh: minecraft_kids).")
     parser.add_argument("-k", "--deepseek-key", type=str, default=os.getenv("DEEPSEEK_API_KEY", "sk-7731fa779b8a46fda7e9e48c46bce715"), help="API Key DeepSeek.")
     parser.add_argument("-m", "--deepseek-model", type=str, default="deepseek-v4-flash", help="Model DeepSeek (mac dinh: deepseek-v4-flash).")
     parser.add_argument("--gui", action="store_true", help="Khoi chay giao dien do hoa (GUI).")
@@ -65,10 +64,20 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--margin-v", type=int, default=160, help="Khoang cach phu de tu mep duoi (pixel, mac dinh: 160).")
     parser.add_argument("--alignment", type=int, default=2, choices=[1, 2, 3, 4, 5, 6, 7, 8, 9], help="Vi tri can le phu de ASS (2 = Bottom-Center, 5 = Mid-Center, 8 = Top-Center).")
     parser.add_argument("--no-bgm", action="store_true", help="Tat nhac nen (chi giu lai giong doc TTS).")
-    parser.add_argument("--bgm-volume", type=float, default=1.0, help="Am luong nhac nen BGM goc (mac dinh: 1.0 = 100%%).")
+    parser.add_argument(
+        "--audio-mode",
+        type=str,
+        default="keep_original",
+        choices=["keep_original", "separate_bgm", "mute_original"],
+        help="Che do am thanh (keep_original: giu nguyen am thanh goc 60%%, separate_bgm: tach giong AI MDX-Net, mute_original: tat am thanh goc)."
+    )
+    parser.add_argument("--original-audio-volume", type=float, default=0.60, help="Am luong am thanh goc khi chon keep_original (mac dinh: 0.60 = 60%%).")
+    parser.add_argument("--bgm-volume", type=float, default=1.0, help="Am luong nhac nen BGM goc khi tach AI (mac dinh: 1.0 = 100%%).")
     parser.add_argument("--separation-speed", type=str, default="turbo", choices=["turbo", "fast", "balanced", "hq"], help="Toc do tach AI MDX-Net (mac dinh: turbo).")
     parser.add_argument("--topic", type=str, default="general_storytelling", help="Chu de bien kich dich thuat (men_beauty_grooming, general_storytelling, movie_anime_recap, ...).")
     parser.add_argument("--check-api", action="store_true", help="Kiem tra trang thai va Rate Limit cua AI API Key.")
+    parser.add_argument("--no-blur", action="store_true", help="Tat hoan toan lam mo phu de video goc.")
+    parser.add_argument("--no-subs", "--no-subtitles", dest="no_subs", action="store_true", help="Tat dong phu de tieng Viet vao video (Hardsub).")
     parser.add_argument("--blur-x", type=int, default=293, help="Toa do X vung lam mo (pixel, mac dinh: 293).")
     parser.add_argument("--blur-y", type=int, default=517, help="Toa do Y vung lam mo (pixel, mac dinh: 517).")
     parser.add_argument("--blur-w", type=int, default=683, help="Chieu rong vung lam mo (pixel, mac dinh: 683).")
@@ -139,6 +148,8 @@ def main():
     sub_style.margin_v = args.margin_v
     sub_style.alignment = args.alignment
 
+    audio_mode = "mute_original" if args.no_bgm else args.audio_mode
+
     config = PipelineConfig(
         llm_provider="deepseek",
         deepseek_api_key=deepseek_key,
@@ -147,8 +158,12 @@ def main():
         topic_preset=args.topic,
         speed_factor=args.speed,
         final_speed=args.final_speed,
+        export_resolution="1080p",
+        enable_subtitles=not args.no_subs,
+        audio_mode=audio_mode,
+        original_audio_volume=args.original_audio_volume,
         keep_bgm=not args.no_bgm,
-        bgm_volume=args.bgm_volume,
+        bgm_volume=args.bgm_volume if audio_mode == "separate_bgm" else args.original_audio_volume,
         separation_speed=args.separation_speed,
         cookie_config=cookie_cfg,
         blur_region=BlurRegion(
@@ -159,7 +174,7 @@ def main():
             y_ratio=args.blur_y_ratio,
             height_ratio=args.blur_height_ratio,
             blur_power=15,
-            enabled=True,
+            enabled=not args.no_blur,
             smart_blur=not args.no_smart_blur,
             pad_before=args.blur_pad_before,
             pad_after=args.blur_pad_after,

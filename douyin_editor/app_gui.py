@@ -97,6 +97,11 @@ class DouyinEditorApp(ctk.CTk):
         self.saved_blur_height_ratio = 0.0694
         self.saved_topic_preset = "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)"
         self.saved_custom_prompt = ""
+        self.saved_audio_mode = "🎧 Giữ âm thanh gốc (60%)"
+        self.saved_original_audio_volume = 0.60
+        self.saved_bgm_volume = 1.00
+        self.saved_blur_enabled = True
+        self.saved_enable_subtitles = True
         if CONFIG_FILE.exists():
             try:
                 data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
@@ -114,7 +119,9 @@ class DouyinEditorApp(ctk.CTk):
                 self.saved_alignment = data.get("subtitle_alignment", "2")
                 self.saved_sub_preset = data.get("subtitle_preset_id", "badge_white_on_black")
                 self.saved_export_res = data.get("export_resolution", "🔥 1080p Full HD (Chuẩn YouTube)")
+                self.saved_blur_enabled = data.get("blur_enabled", True)
                 self.saved_smart_blur = data.get("smart_blur", True)
+                self.saved_enable_subtitles = data.get("enable_subtitles", True)
                 self.saved_blur_x = data.get("blur_x", 293)
                 self.saved_blur_y = data.get("blur_y", 517)
                 self.saved_blur_w = data.get("blur_w", 683)
@@ -123,6 +130,9 @@ class DouyinEditorApp(ctk.CTk):
                 self.saved_blur_height_ratio = float(data.get("blur_height_ratio", 0.0694))
                 self.saved_topic_preset = data.get("topic_preset", "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)")
                 self.saved_custom_prompt = data.get("custom_translation_prompt", "")
+                self.saved_audio_mode = data.get("audio_mode", "🎧 Giữ âm thanh gốc (60%)")
+                self.saved_original_audio_volume = float(data.get("original_audio_volume", 0.60))
+                self.saved_bgm_volume = float(data.get("bgm_volume", 1.00))
             except Exception:
                 pass
 
@@ -147,6 +157,10 @@ class DouyinEditorApp(ctk.CTk):
             font_size_val = self.cmb_font_size.get() if hasattr(self, "cmb_font_size") else getattr(self, "saved_font_size", "22")
             margin_v_val = str(int(self.slider_margin_v.get())) if hasattr(self, "slider_margin_v") else getattr(self, "saved_margin_v", "160")
             custom_prompt_val = self.custom_prompt_textbox.get("1.0", "end").strip() if hasattr(self, "custom_prompt_textbox") else getattr(self, "saved_custom_prompt", "")
+            audio_mode_val = self.seg_audio_mode.get() if hasattr(self, "seg_audio_mode") else getattr(self, "saved_audio_mode", "🎧 Giữ âm thanh gốc (60%)")
+            audio_vol_val = float(self.slider_audio_vol.get()) if hasattr(self, "slider_audio_vol") else getattr(self, "saved_original_audio_volume", 0.60)
+            blur_enabled_val = bool(self.chk_blur.get()) if hasattr(self, "chk_blur") else getattr(self, "saved_blur_enabled", True)
+            enable_subs_val = bool(self.chk_enable_subtitles.get()) if hasattr(self, "chk_enable_subtitles") else getattr(self, "saved_enable_subtitles", True)
 
             data = {
                 "llm_provider": current_provider,
@@ -163,7 +177,9 @@ class DouyinEditorApp(ctk.CTk):
                 "subtitle_alignment": str(self._get_alignment_code()) if hasattr(self, "seg_alignment") else "2",
                 "subtitle_preset_id": getattr(self, "selected_sub_preset_id", "badge_white_on_black"),
                 "export_resolution": self.cmb_export_res.get() if hasattr(self, "cmb_export_res") else "🔥 1080p Full HD (Chuẩn YouTube)",
+                "blur_enabled": blur_enabled_val,
                 "smart_blur": bool(self.chk_smart_blur.get()) if hasattr(self, "chk_smart_blur") else True,
+                "enable_subtitles": enable_subs_val,
                 "blur_x": bx,
                 "blur_y": by,
                 "blur_w": bw,
@@ -172,6 +188,9 @@ class DouyinEditorApp(ctk.CTk):
                 "blur_height_ratio": bh_r,
                 "topic_preset": self.cmb_topic.get() if hasattr(self, "cmb_topic") else "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)",
                 "custom_translation_prompt": custom_prompt_val,
+                "audio_mode": audio_mode_val,
+                "original_audio_volume": audio_vol_val if "Giữ" in audio_mode_val else getattr(self, "saved_original_audio_volume", 0.60),
+                "bgm_volume": audio_vol_val if "Tách" in audio_mode_val else getattr(self, "saved_bgm_volume", 1.00),
             }
             CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
@@ -586,8 +605,16 @@ class DouyinEditorApp(ctk.CTk):
         self.cmb_export_res.pack(side="right")
 
         # Checkbox Blur
-        self.chk_blur = ctk.CTkCheckBox(video_card, text="Làm mờ phụ đề tiếng Trung gốc (Boxblur)", font=ctk.CTkFont(weight="bold"))
-        self.chk_blur.select()
+        self.chk_blur = ctk.CTkCheckBox(
+            video_card,
+            text="Làm mờ phụ đề tiếng Trung gốc (Boxblur)",
+            font=ctk.CTkFont(weight="bold"),
+            command=self._on_blur_toggled
+        )
+        if getattr(self, "saved_blur_enabled", True):
+            self.chk_blur.select()
+        else:
+            self.chk_blur.deselect()
         self.chk_blur.pack(anchor="w", padx=12, pady=(4, 2))
 
         # Checkbox Làm mờ thông minh (Chỉ mờ khi có phụ đề)
@@ -595,7 +622,8 @@ class DouyinEditorApp(ctk.CTk):
             video_card,
             text="✨ Làm mờ thông minh (Tự ẩn vùng mờ khi không có phụ đề)",
             font=ctk.CTkFont(size=12, weight="bold"),
-            text_color="#38bdf8"
+            text_color="#38bdf8",
+            command=lambda: self._save_settings()
         )
         if getattr(self, "saved_smart_blur", True):
             self.chk_smart_blur.select()
@@ -678,11 +706,11 @@ class DouyinEditorApp(ctk.CTk):
         self.slider_blur_h.set(saved_h_r)
         self.slider_blur_h.grid(row=1, column=1, sticky="ew", padx=(6, 0))
 
-        # 5. Card TTS & BGM
+        # 5. Card TTS & Âm Thanh Nền (Audio Mode & Volume)
         audio_card = ctk.CTkFrame(left_scroll, corner_radius=8)
         audio_card.pack(fill="x", padx=5, pady=5)
 
-        ctk.CTkLabel(audio_card, text="🎙️ Giọng Đọc AI (TTS) & Nhạc Nền (BGM):", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=12, pady=(10, 6))
+        ctk.CTkLabel(audio_card, text="🎙️ Giọng Đọc AI (TTS) & Âm Thanh Nền (BGM / Audio Gốc):", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=12, pady=(10, 6))
 
         tts_row = ctk.CTkFrame(audio_card, fg_color="transparent")
         tts_row.pack(fill="x", padx=12, pady=4)
@@ -716,21 +744,34 @@ class DouyinEditorApp(ctk.CTk):
         )
         self.btn_preview_voice.pack(side="left")
 
-        self.chk_bgm = ctk.CTkCheckBox(
-            audio_card,
-            text="Tách giọng AI & Giữ nguyên nhạc nền BGM gốc (UVR MDX-Net)",
-            font=ctk.CTkFont(size=12, weight="bold")
-        )
-        self.chk_bgm.select()  # Mặc định BẬT để tách giọng và giữ nhạc nền gốc
-        self.chk_bgm.pack(anchor="w", padx=12, pady=(8, 2))
+        # Chế độ âm thanh nền
+        ctk.CTkLabel(audio_card, text="Chế độ âm thanh nền video:", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=12, pady=(6, 2))
 
-        # Tùy chọn tốc độ tách AI
-        sep_speed_row = ctk.CTkFrame(audio_card, fg_color="transparent")
-        sep_speed_row.pack(fill="x", padx=12, pady=(4, 4))
-        ctk.CTkLabel(sep_speed_row, text="Tốc độ tách AI:").pack(side="left", padx=(0, 6))
+        audio_mode_options = [
+            "🎧 Giữ âm thanh gốc (60%)",
+            "✨ Tách giọng AI (MDX-Net)",
+            "🔇 Tắt âm gốc"
+        ]
+
+        self.seg_audio_mode = ctk.CTkSegmentedButton(
+            audio_card,
+            values=audio_mode_options,
+            command=self._on_audio_mode_changed,
+            selected_color="#0284c7",
+            selected_hover_color="#0369a1"
+        )
+        saved_mode = getattr(self, "saved_audio_mode", "🎧 Giữ âm thanh gốc (60%)")
+        if saved_mode not in audio_mode_options:
+            saved_mode = "🎧 Giữ âm thanh gốc (60%)"
+        self.seg_audio_mode.set(saved_mode)
+        self.seg_audio_mode.pack(fill="x", padx=12, pady=(2, 6))
+
+        # Tùy chọn tốc độ tách AI (Ẩn/Hiện theo chế độ)
+        self.sep_speed_row = ctk.CTkFrame(audio_card, fg_color="transparent")
+        ctk.CTkLabel(self.sep_speed_row, text="Tốc độ tách AI:").pack(side="left", padx=(0, 6))
 
         self.cmb_sep_speed = ctk.CTkComboBox(
-            sep_speed_row,
+            self.sep_speed_row,
             values=[
                 "⚡ Siêu Tốc (Turbo 0% Overlap)",
                 "🚀 Rất Nhanh (Fast 25% Overlap)",
@@ -742,29 +783,71 @@ class DouyinEditorApp(ctk.CTk):
         self.cmb_sep_speed.set("⚡ Siêu Tốc (Turbo 0% Overlap)")
         self.cmb_sep_speed.pack(side="left")
 
-        bgm_vol_row = ctk.CTkFrame(audio_card, fg_color="transparent")
-        bgm_vol_row.pack(fill="x", padx=12, pady=(4, 4))
-        ctk.CTkLabel(bgm_vol_row, text="Âm lượng nhạc nền BGM gốc:").pack(side="left")
-        self.lbl_bgm_vol = ctk.CTkLabel(bgm_vol_row, text="100% (Giữ nguyên gốc)", font=ctk.CTkFont(weight="bold"), text_color="#10b981")
-        self.lbl_bgm_vol.pack(side="right")
+        # Frame chứa slider âm lượng
+        self.vol_slider_frame = ctk.CTkFrame(audio_card, fg_color="transparent")
+        self.vol_slider_frame.pack(fill="x", padx=12, pady=(2, 4))
 
-        self.slider_bgm_vol = ctk.CTkSlider(
-            audio_card, from_=0.0, to=1.50, number_of_steps=15,
-            command=lambda v: self.lbl_bgm_vol.configure(
-                text=f"{int(v*100)}% (Giữ nguyên gốc)" if abs(v - 1.0) < 0.05 else f"{int(v*100)}%"
-            )
+        vol_header = ctk.CTkFrame(self.vol_slider_frame, fg_color="transparent")
+        vol_header.pack(fill="x", pady=(2, 2))
+        self.lbl_audio_vol_title = ctk.CTkLabel(vol_header, text="Âm lượng âm thanh video gốc:")
+        self.lbl_audio_vol_title.pack(side="left")
+
+        initial_vol = float(getattr(self, "saved_original_audio_volume", 0.60)) if "Giữ" in saved_mode else float(getattr(self, "saved_bgm_volume", 1.00))
+        self.lbl_audio_vol_val = ctk.CTkLabel(
+            vol_header,
+            text="60% (Chuẩn nghe rõ cả 2)",
+            font=ctk.CTkFont(weight="bold"),
+            text_color="#38bdf8"
         )
-        self.slider_bgm_vol.set(1.00)  # Mặc định 100% giữ nguyên âm lượng gốc
-        self.slider_bgm_vol.pack(fill="x", padx=12, pady=(0, 10))
+        self.lbl_audio_vol_val.pack(side="right")
+
+        self.slider_audio_vol = ctk.CTkSlider(
+            self.vol_slider_frame, from_=0.0, to=1.50, number_of_steps=30,
+            command=self._on_audio_slider_changed
+        )
+        self.slider_audio_vol.set(initial_vol)
+        self.slider_audio_vol.pack(fill="x", pady=(0, 2))
+        self._update_audio_vol_label(initial_vol)
+
+        # Ghi chú hướng dẫn chế độ
+        self.lbl_audio_mode_hint = ctk.CTkLabel(
+            audio_card,
+            text="💡 Giữ nguyên 100% âm thanh video gốc (nhạc nền, sound effects). Không tách giọng AI, âm lượng 60% giúp giọng đọc AI nổi bật rõ ràng.",
+            font=ctk.CTkFont(size=11),
+            text_color="#38bdf8",
+            wraplength=480,
+            justify="left"
+        )
+        self.lbl_audio_mode_hint.pack(anchor="w", padx=12, pady=(2, 8))
+
+        # Áp dụng hiển thị ban đầu theo chế độ đã lưu
+        self._on_audio_mode_changed(saved_mode)
 
         # 6. Card Phụ đề tiếng Việt (CapCut Subtitle Style Grid)
         sub_card = ctk.CTkFrame(left_scroll, corner_radius=8)
         sub_card.pack(fill="x", padx=5, pady=5)
 
-        ctk.CTkLabel(sub_card, text="✍️ Mẫu Chữ Phụ Đề (CapCut Text Presets):", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=12, pady=(10, 4))
+        ctk.CTkLabel(sub_card, text="✍️ Phụ Đề Tiếng Việt & Mẫu Chữ CapCut:", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=12, pady=(10, 4))
+
+        self.chk_enable_subtitles = ctk.CTkCheckBox(
+            sub_card,
+            text="✨ Đóng phụ đề tiếng Việt vào video (Hardsub)",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="#38bdf8",
+            command=self._on_enable_subtitles_toggled
+        )
+        if getattr(self, "saved_enable_subtitles", True):
+            self.chk_enable_subtitles.select()
+        else:
+            self.chk_enable_subtitles.deselect()
+        self.chk_enable_subtitles.pack(anchor="w", padx=12, pady=(2, 6))
+
+        # Container chứa toàn bộ cài đặt chi tiết phụ đề (tự ẩn/hiện khi bật/tắt phụ đề)
+        self.sub_settings_container = ctk.CTkFrame(sub_card, fg_color="transparent")
+        self.sub_settings_container.pack(fill="x", padx=0, pady=0)
 
         # Grid mẫu chữ kiểu CapCut (6 cột)
-        grid_frame = ctk.CTkFrame(sub_card, fg_color="#18181b", corner_radius=8)
+        grid_frame = ctk.CTkFrame(self.sub_settings_container, fg_color="#18181b", corner_radius=8)
         grid_frame.pack(fill="x", padx=12, pady=(4, 6))
 
         for col in range(6):
@@ -793,7 +876,7 @@ class DouyinEditorApp(ctk.CTk):
             self.sub_preset_buttons[p_id] = btn
 
         self.lbl_selected_sub_preset = ctk.CTkLabel(
-            sub_card,
+            self.sub_settings_container,
             text=f"Kiểu đang chọn: 🔥 {SUBTITLE_PRESETS[self.selected_sub_preset_id]['name']}",
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color="#38bdf8"
@@ -801,7 +884,7 @@ class DouyinEditorApp(ctk.CTk):
         self.lbl_selected_sub_preset.pack(anchor="w", padx=12, pady=(2, 6))
 
         # Font chữ & Cỡ chữ
-        sub_row = ctk.CTkFrame(sub_card, fg_color="transparent")
+        sub_row = ctk.CTkFrame(self.sub_settings_container, fg_color="transparent")
         sub_row.pack(fill="x", padx=12, pady=(2, 4))
         sub_row.grid_columnconfigure((0, 1), weight=1)
 
@@ -824,7 +907,7 @@ class DouyinEditorApp(ctk.CTk):
         self.cmb_font_size.grid(row=1, column=1, sticky="ew", padx=(6, 0))
 
         # Vùng Cấu hình Vị trí Hiển thị Phụ đề (Alignment & Margin V)
-        pos_card = ctk.CTkFrame(sub_card, fg_color="#18181b", corner_radius=6, border_width=1, border_color="#27272a")
+        pos_card = ctk.CTkFrame(self.sub_settings_container, fg_color="#18181b", corner_radius=6, border_width=1, border_color="#27272a")
         pos_card.pack(fill="x", padx=12, pady=(4, 6))
 
         # 1. Căn lề dọc / vị trí tổng quan
@@ -882,7 +965,7 @@ class DouyinEditorApp(ctk.CTk):
         btn_q4.grid(row=0, column=3, padx=2, sticky="ew")
 
         # Tùy chọn in đậm chữ
-        opt_row = ctk.CTkFrame(sub_card, fg_color="transparent")
+        opt_row = ctk.CTkFrame(self.sub_settings_container, fg_color="transparent")
         opt_row.pack(fill="x", padx=12, pady=(2, 4))
         self.chk_bold_sub = ctk.CTkCheckBox(
             opt_row,
@@ -894,7 +977,7 @@ class DouyinEditorApp(ctk.CTk):
         self.chk_bold_sub.pack(side="left")
 
         # Live Subtitle Preview Banner
-        self.preview_sub_frame = ctk.CTkFrame(sub_card, corner_radius=6, border_width=1, border_color="#3f3f46", fg_color="#18181b")
+        self.preview_sub_frame = ctk.CTkFrame(self.sub_settings_container, corner_radius=6, border_width=1, border_color="#3f3f46", fg_color="#18181b")
         self.preview_sub_frame.pack(fill="x", padx=12, pady=(6, 12))
 
         self.lbl_preview_sub_text = ctk.CTkLabel(
@@ -905,6 +988,10 @@ class DouyinEditorApp(ctk.CTk):
             pady=8
         )
         self.lbl_preview_sub_text.pack()
+
+        # Áp dụng trạng thái khởi tạo cho Blur và Subtitles
+        self._on_blur_toggled()
+        self._on_enable_subtitles_toggled()
 
         # -------------------------------------------------------------
         # CỘT PHẢI: TIẾN TRÌNH 8 BƯỚC & KIỂM TRA PHỤ ĐỀ / LOGS
@@ -925,12 +1012,12 @@ class DouyinEditorApp(ctk.CTk):
         self.step_labels = []
         step_names = [
             "1. Tải Video Douyin (Multi-Engine)",
-            "2. Tách Giọng AI & BGM 0.70x (MDX-Net)",
-            "3. Local STT (Track Vocals Sạch)",
+            "2. Xử Lý Audio 0.70x & Whisper STT",
+            "3. Local STT Nhận Diện Giọng Nói",
             "4. Dịch thuật AI (DeepSeek / ChatGPT)",
             "5. Đọc CapCut TTS & Đồng bộ Timeline",
             "6. Single-Pass Master Render 0.70x",
-            "7. Đóng Phụ Đề & Mix BGM 100%",
+            "7. Đóng Phụ Đề & Hòa Âm Audio",
             "8. Xuất Video MP4 Thành Phẩm"
         ]
 
@@ -1312,8 +1399,22 @@ class DouyinEditorApp(ctk.CTk):
 
     def _open_visual_roi_selector(self, video_file: Optional[Path] = None):
         """Mở cửa sổ Studio đồ họa cho phép người dùng kéo chuột khoanh vùng mờ & chỉnh tay phụ đề"""
-        def on_saved(region: BlurRegion, sub_style: Optional[SubtitleStyle] = None):
+        def on_saved(region: BlurRegion, sub_style: Optional[SubtitleStyle] = None, enable_subs: Optional[bool] = None):
             self.current_blur_region = region
+            if hasattr(self, "chk_blur"):
+                if region.enabled:
+                    self.chk_blur.select()
+                else:
+                    self.chk_blur.deselect()
+                self._on_blur_toggled()
+
+            if enable_subs is not None and hasattr(self, "chk_enable_subtitles"):
+                if enable_subs:
+                    self.chk_enable_subtitles.select()
+                else:
+                    self.chk_enable_subtitles.deselect()
+                self._on_enable_subtitles_toggled()
+
             self.slider_blur_y.set(region.y_ratio)
             self.slider_blur_h.set(region.height_ratio)
             self.lbl_blur_y_title.configure(text=f"Vị trí mờ (Y): {region.y_ratio*100:.1f}%")
@@ -1323,7 +1424,8 @@ class DouyinEditorApp(ctk.CTk):
                 by = region.y if region.y is not None else int(720 * region.y_ratio)
                 bw = region.width if region.width is not None else 683
                 bh = region.height if region.height is not None else int(720 * region.height_ratio)
-                self.lbl_blur_coords.configure(text=f"📍 Tọa độ mờ: X={bx}, Y={by}, W={bw}, H={bh} (Y={region.y_ratio*100:.1f}%)")
+                status_str = "" if region.enabled else " [TẮT]"
+                self.lbl_blur_coords.configure(text=f"📍 Tọa độ mờ{status_str}: X={bx}, Y={by}, W={bw}, H={bh} (Y={region.y_ratio*100:.1f}%)")
 
             if sub_style:
                 self.current_subtitle_style = copy.copy(sub_style)
@@ -1353,8 +1455,12 @@ class DouyinEditorApp(ctk.CTk):
                 self._update_sub_preview_banner()
 
             self._save_settings()
-            self._append_log(f"Đã cập nhật vùng mờ: Y={region.y_ratio*100:.1f}%, H={region.height_ratio*100:.1f}% (Pixel: X={region.x}, Y={region.y}, W={region.width}, H={region.height})", "CONFIG")
-            if sub_style:
+            blur_desc = f"BẬT (Y={region.y_ratio*100:.1f}%, H={region.height_ratio*100:.1f}%)" if region.enabled else "TẮT (Không làm mờ)"
+            self._append_log(f"Đã cập nhật vùng mờ: {blur_desc}", "CONFIG")
+            if enable_subs is not None:
+                sub_desc = f"BẬT - {sub_style.name if sub_style else 'Mặc định'}" if enable_subs else "TẮT (Không đóng hardsub)"
+                self._append_log(f"🎯 Phụ đề Tiếng Việt: {sub_desc}", "CONFIG")
+            elif sub_style:
                 self._append_log(f"🎯 Phụ đề Tiếng Việt: {sub_style.name} (Margin V={sub_style.margin_v}px)", "CONFIG")
 
         dlg = VisualROISelectorDialog(
@@ -1362,6 +1468,7 @@ class DouyinEditorApp(ctk.CTk):
             video_path=video_file,
             initial_blur_region=self.current_blur_region,
             initial_subtitle_style=self.current_subtitle_style,
+            initial_enable_subtitles=bool(self.chk_enable_subtitles.get()) if hasattr(self, "chk_enable_subtitles") else True,
             on_save_callback=on_saved
         )
         return dlg
@@ -1455,6 +1562,113 @@ class DouyinEditorApp(ctk.CTk):
             text_color=p_info["fg_color"],
             font=ctk.CTkFont(family=font_name, size=max(13, min(int(font_size * 0.7), 24)), weight=is_bold)
         )
+
+    def _on_audio_slider_changed(self, val: float):
+        """Xử lý khi người dùng kéo thanh trượt âm lượng âm thanh nền"""
+        self._update_audio_vol_label(val)
+        mode = self.seg_audio_mode.get() if hasattr(self, "seg_audio_mode") else ""
+        if "Giữ" in mode:
+            self.saved_original_audio_volume = val
+        elif "Tách" in mode:
+            self.saved_bgm_volume = val
+        self._save_settings()
+
+    def _update_audio_vol_label(self, val: float):
+        """Cập nhật text hiển thị mức âm lượng theo chế độ âm thanh hiện tại"""
+        mode = self.seg_audio_mode.get() if hasattr(self, "seg_audio_mode") else ""
+        pct = int(round(val * 100))
+        if "Giữ" in mode:
+            if abs(val - 0.60) < 0.04:
+                lbl_text = f"{pct}% (Chuẩn nghe rõ cả 2)"
+            elif abs(val - 1.0) < 0.04:
+                lbl_text = f"{pct}% (Gốc 100%)"
+            else:
+                lbl_text = f"{pct}%"
+            if hasattr(self, "lbl_audio_vol_val"):
+                self.lbl_audio_vol_val.configure(text=lbl_text, text_color="#38bdf8")
+        else:
+            if abs(val - 1.0) < 0.04:
+                lbl_text = f"{pct}% (Giữ nguyên gốc)"
+            else:
+                lbl_text = f"{pct}%"
+            if hasattr(self, "lbl_audio_vol_val"):
+                self.lbl_audio_vol_val.configure(text=lbl_text, text_color="#10b981")
+
+    def _on_audio_mode_changed(self, mode: str):
+        """Xử lý khi người dùng chuyển đổi giữa 3 chế độ âm thanh nền"""
+        if "Giữ" in mode:
+            if hasattr(self, "lbl_audio_vol_title"):
+                self.lbl_audio_vol_title.configure(text="Âm lượng âm thanh video gốc:")
+            if hasattr(self, "vol_slider_frame"):
+                self.vol_slider_frame.pack(fill="x", padx=12, pady=(2, 4))
+            if hasattr(self, "slider_audio_vol"):
+                curr_v = float(getattr(self, "saved_original_audio_volume", 0.60))
+                self.slider_audio_vol.set(curr_v)
+                self._update_audio_vol_label(curr_v)
+            if hasattr(self, "sep_speed_row"):
+                self.sep_speed_row.pack_forget()
+            if hasattr(self, "lbl_audio_mode_hint"):
+                self.lbl_audio_mode_hint.configure(
+                    text="💡 Giữ nguyên 100% âm thanh video gốc (nhạc nền, sound effects). Không tách giọng AI, âm lượng 60% giúp giọng đọc AI nổi bật rõ ràng.",
+                    text_color="#38bdf8"
+                )
+        elif "Tách giọng" in mode:
+            if hasattr(self, "lbl_audio_vol_title"):
+                self.lbl_audio_vol_title.configure(text="Âm lượng nhạc nền BGM (đã tách giọng):")
+            if hasattr(self, "vol_slider_frame"):
+                self.vol_slider_frame.pack(fill="x", padx=12, pady=(2, 4))
+            if hasattr(self, "slider_audio_vol"):
+                curr_v = float(getattr(self, "saved_bgm_volume", 1.00))
+                self.slider_audio_vol.set(curr_v)
+                self._update_audio_vol_label(curr_v)
+            if hasattr(self, "sep_speed_row"):
+                self.sep_speed_row.pack(fill="x", padx=12, pady=(4, 4))
+            if hasattr(self, "lbl_audio_mode_hint"):
+                self.lbl_audio_mode_hint.configure(
+                    text="💡 Dùng AI UVR MDX-Net bóc tách giọng nói tiếng Trung và giữ lại nhạc nền BGM không lời.",
+                    text_color="#10b981"
+                )
+        else:  # Tắt âm gốc
+            if hasattr(self, "vol_slider_frame"):
+                self.vol_slider_frame.pack_forget()
+            if hasattr(self, "sep_speed_row"):
+                self.sep_speed_row.pack_forget()
+            if hasattr(self, "lbl_audio_mode_hint"):
+                self.lbl_audio_mode_hint.configure(
+                    text="💡 Tắt hoàn toàn âm thanh video gốc, video xuất bản chỉ chứa giọng đọc AI tiếng Việt.",
+                    text_color="gray70"
+                )
+        self._save_settings()
+
+    def _on_blur_toggled(self):
+        """Xử lý khi người dùng Bật / Tắt checkbox làm mờ phụ đề gốc"""
+        is_blur = bool(self.chk_blur.get()) if hasattr(self, "chk_blur") else True
+        state = "normal" if is_blur else "disabled"
+        if hasattr(self, "chk_smart_blur"):
+            self.chk_smart_blur.configure(state=state)
+        if hasattr(self, "btn_open_roi_selector"):
+            self.btn_open_roi_selector.configure(state=state)
+        if hasattr(self, "btn_quick_douyin_blur"):
+            self.btn_quick_douyin_blur.configure(state=state)
+        if hasattr(self, "slider_blur_y"):
+            self.slider_blur_y.configure(state=state)
+        if hasattr(self, "slider_blur_h"):
+            self.slider_blur_h.configure(state=state)
+        if hasattr(self, "chk_interactive_roi"):
+            self.chk_interactive_roi.configure(state=state)
+        self.saved_blur_enabled = is_blur
+        self._save_settings()
+
+    def _on_enable_subtitles_toggled(self):
+        """Xử lý khi người dùng Bật / Tắt checkbox đóng phụ đề tiếng Việt vào video"""
+        is_subs = bool(self.chk_enable_subtitles.get()) if hasattr(self, "chk_enable_subtitles") else True
+        if hasattr(self, "sub_settings_container"):
+            if is_subs:
+                self.sub_settings_container.pack(fill="x", padx=0, pady=0)
+            else:
+                self.sub_settings_container.pack_forget()
+        self.saved_enable_subtitles = is_subs
+        self._save_settings()
 
     def _append_log(self, message: str, level: str = "INFO"):
         ts = time.strftime("%H:%M:%S")
@@ -1553,8 +1767,25 @@ class DouyinEditorApp(ctk.CTk):
 
         speed_factor = float(self.slider_speed.get())
         final_speed = float(self.slider_final_speed.get()) if hasattr(self, "slider_final_speed") else 1.20
-        keep_bgm = bool(self.chk_bgm.get())
-        bgm_vol = float(self.slider_bgm_vol.get())
+
+        # Cấu hình âm thanh nền (Audio Mode)
+        audio_mode_raw = self.seg_audio_mode.get() if hasattr(self, "seg_audio_mode") else "🎧 Giữ âm thanh gốc (60%)"
+        if "Tách giọng" in audio_mode_raw or "MDX-Net" in audio_mode_raw:
+            audio_mode_code = "separate_bgm"
+            keep_bgm = True
+            bgm_vol = float(self.slider_audio_vol.get()) if hasattr(self, "slider_audio_vol") else 1.00
+            orig_audio_vol = 0.60
+        elif "Tắt" in audio_mode_raw:
+            audio_mode_code = "mute_original"
+            keep_bgm = False
+            bgm_vol = 0.0
+            orig_audio_vol = 0.0
+        else:
+            audio_mode_code = "keep_original"
+            keep_bgm = True
+            orig_audio_vol = float(self.slider_audio_vol.get()) if hasattr(self, "slider_audio_vol") else 0.60
+            bgm_vol = orig_audio_vol
+
         font_name = self.cmb_font.get()
         font_size = int(self.cmb_font_size.get())
         blur_enabled = bool(self.chk_blur.get())
@@ -1635,6 +1866,9 @@ class DouyinEditorApp(ctk.CTk):
             speed_factor=speed_factor,
             final_speed=final_speed,
             export_resolution=res_code,
+            enable_subtitles=bool(self.chk_enable_subtitles.get()) if hasattr(self, "chk_enable_subtitles") else True,
+            audio_mode=audio_mode_code,
+            original_audio_volume=orig_audio_vol,
             keep_bgm=keep_bgm,
             bgm_volume=bgm_vol,
             separation_speed=sep_speed_code,
@@ -1660,18 +1894,35 @@ class DouyinEditorApp(ctk.CTk):
 
         self._append_log("Bắt đầu khởi chạy quy trình tự động hóa...", "START")
 
-        def interactive_roi_hook(raw_video_path: Path, current_region: BlurRegion, current_sub_style: Optional[SubtitleStyle] = None) -> Tuple[BlurRegion, Optional[SubtitleStyle]]:
+        def interactive_roi_hook(raw_video_path: Path, current_region: BlurRegion, current_sub_style: Optional[SubtitleStyle] = None) -> Tuple[BlurRegion, Optional[SubtitleStyle], bool]:
             """Hàm hook chặn luồng xử lý để mở Studio chọn vùng mờ & chỉnh tay phụ đề trên video vừa tải"""
             event = threading.Event()
             chosen_container = {
                 "region": current_region,
-                "sub_style": current_sub_style or self.current_subtitle_style
+                "sub_style": current_sub_style or self.current_subtitle_style,
+                "enable_subtitles": bool(self.chk_enable_subtitles.get()) if hasattr(self, "chk_enable_subtitles") else True
             }
 
             def open_dialog():
-                def on_save(r: BlurRegion, s: Optional[SubtitleStyle] = None):
+                def on_save(r: BlurRegion, s: Optional[SubtitleStyle] = None, enable_subs: Optional[bool] = None):
                     chosen_container["region"] = r
                     self.current_blur_region = r
+                    if hasattr(self, "chk_blur"):
+                        if r.enabled:
+                            self.chk_blur.select()
+                        else:
+                            self.chk_blur.deselect()
+                        self._on_blur_toggled()
+
+                    if enable_subs is not None:
+                        chosen_container["enable_subtitles"] = bool(enable_subs)
+                        if hasattr(self, "chk_enable_subtitles"):
+                            if enable_subs:
+                                self.chk_enable_subtitles.select()
+                            else:
+                                self.chk_enable_subtitles.deselect()
+                            self._on_enable_subtitles_toggled()
+
                     self.slider_blur_y.set(r.y_ratio)
                     self.slider_blur_h.set(r.height_ratio)
 
@@ -1680,7 +1931,8 @@ class DouyinEditorApp(ctk.CTk):
                         by = r.y if r.y is not None else int(720 * r.y_ratio)
                         bw = r.width if r.width is not None else 683
                         bh = r.height if r.height is not None else int(720 * r.height_ratio)
-                        self.lbl_blur_coords.configure(text=f"📍 Tọa độ mờ: X={bx}, Y={by}, W={bw}, H={bh} (Y={r.y_ratio*100:.1f}%)")
+                        status_str = "" if r.enabled else " [TẮT]"
+                        self.lbl_blur_coords.configure(text=f"📍 Tọa độ mờ{status_str}: X={bx}, Y={by}, W={bw}, H={bh} (Y={r.y_ratio*100:.1f}%)")
 
                     if s:
                         chosen_container["sub_style"] = s
@@ -1696,8 +1948,12 @@ class DouyinEditorApp(ctk.CTk):
                         self._update_sub_preview_banner()
 
                     self._save_settings()
-                    self._append_log(f"Đã chọn vùng mờ: Pixel X={r.x}, Y={r.y}, W={r.width}, H={r.height} ({r.y_ratio*100:.1f}%)", "ROI")
-                    if s:
+                    blur_desc = f"BẬT (Pixel X={r.x}, Y={r.y}, W={r.width}, H={r.height})" if r.enabled else "TẮT (Không làm mờ)"
+                    self._append_log(f"Đã chọn vùng mờ: {blur_desc}", "ROI")
+                    if enable_subs is not None:
+                        sub_desc = f"BẬT ({s.name if s else 'Mặc định'})" if enable_subs else "TẮT (Không đóng hardsub)"
+                        self._append_log(f"🎯 Phụ đề Tiếng Việt: {sub_desc}", "ROI")
+                    elif s:
                         self._append_log(f"🎯 Phụ đề Tiếng Việt: {s.name} (Margin V={s.margin_v}px)", "ROI")
                     event.set()
 
@@ -1706,6 +1962,7 @@ class DouyinEditorApp(ctk.CTk):
                     video_path=raw_video_path,
                     initial_blur_region=current_region,
                     initial_subtitle_style=current_sub_style or self.current_subtitle_style,
+                    initial_enable_subtitles=bool(self.chk_enable_subtitles.get()) if hasattr(self, "chk_enable_subtitles") else True,
                     on_save_callback=on_save
                 )
                 # Nếu người dùng đóng cửa sổ mà không bấm Lưu -> dùng cấu hình hiện tại
@@ -1713,7 +1970,7 @@ class DouyinEditorApp(ctk.CTk):
 
             self.after(0, open_dialog)
             event.wait()
-            return chosen_container["region"], chosen_container["sub_style"]
+            return chosen_container["region"], chosen_container["sub_style"], chosen_container["enable_subtitles"]
 
         def worker():
             try:

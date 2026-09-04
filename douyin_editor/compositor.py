@@ -268,7 +268,8 @@ class VideoCompositor:
             raise FileNotFoundError(f"Không tìm thấy file audio TTS: {tts_audio_path}")
 
         has_bgm = bgm_audio_path is not None and Path(bgm_audio_path).exists()
-        has_subtitles = srt_file.exists() and len(srt_file.read_text(encoding="utf-8").strip()) > 0
+        enable_subs = bool(getattr(self.config, "enable_subtitles", True))
+        has_subtitles = enable_subs and srt_file.exists() and len(srt_file.read_text(encoding="utf-8").strip()) > 0
 
         final_speed = float(getattr(self.config, "final_speed", 1.20))
         if final_speed <= 0:
@@ -339,6 +340,7 @@ class VideoCompositor:
 
 
         v_filter_str = "".join(v_filter_parts)
+        logger.info(f"[Master Render] Làm mờ (Blur): {'BẬT' if should_apply_blur else 'TẮT'} | Phụ đề Tiếng Việt (Hardsub): {'BẬT' if has_subtitles else 'TẮT'}")
 
         # 2. Xây dựng audio filter (kèm atempo=final_speed giữ nguyên pitch)
         preset = getattr(self.config, "video_preset", "ultrafast")
