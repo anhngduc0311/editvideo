@@ -433,6 +433,7 @@ class DouyinEditorApp(ctk.CTk):
         ctk.CTkLabel(topic_row, text="🎯 Chủ đề cốt truyện:", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=(0, 8))
 
         topic_names = [
+            "💈 Làm Đẹp, Skincare & Grooming Nam Giới (FB Reels / Shorts Chuẩn Men)",
             "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)",
             "🎮 Minecraft Phiêu Lưu & Troll Bựa Thiếu Nhi (Vui nhộn, chuẩn gamer nhí)",
             "🎬 Tóm Tắt & Review Phim / Hoạt Hình / Anime (Cuốn hút, giữ chân người xem)",
@@ -453,7 +454,10 @@ class DouyinEditorApp(ctk.CTk):
         saved_topic = getattr(self, "saved_topic_preset", topic_names[0])
         if saved_topic not in topic_names:
             for tn in topic_names:
-                if "100" in saved_topic and "100" in tn:
+                if any(k in saved_topic for k in ["Làm Đẹp", "Skincare", "Grooming", "Nam"]) and any(k in tn for k in ["Làm Đẹp", "Skincare", "Nam"]):
+                    saved_topic = tn
+                    break
+                elif "100" in saved_topic and "100" in tn:
                     saved_topic = tn
                     break
                 elif "Trẻ Em" in saved_topic and "Thiếu Nhi" in tn:
@@ -491,27 +495,32 @@ class DouyinEditorApp(ctk.CTk):
             self.custom_prompt_textbox.insert("1.0", new_t)
             self._save_settings()
 
-        btn_st1 = ctk.CTkButton(quick_style_row, text="🔥 Kịch tính", width=75, height=22, font=ctk.CTkFont(size=10),
+        btn_st_men = ctk.CTkButton(quick_style_row, text="💈 Skincare Nam", width=90, height=22, font=ctk.CTkFont(size=10),
+                                   fg_color="#059669", hover_color="#047857",
+                                   command=lambda: _insert_quick_style("Văn phong chuẩn men làm video ngắn FB, xưng hô 'mình / anh em', đánh trúng nỗi đau da dầu mụn/tóc tai/ngoại hình, chia sẻ mẹo thực tế cho phái mạnh."))
+        btn_st_men.pack(side="left", padx=(0, 4))
+
+        btn_st1 = ctk.CTkButton(quick_style_row, text="🔥 Kịch tính", width=68, height=22, font=ctk.CTkFont(size=10),
                                 fg_color="#ef4444", hover_color="#dc2626",
                                 command=lambda: _insert_quick_style("Tập trung đẩy cao trào kịch tính, nhấn mạnh tình huống gay cấn và màn lật kèo bất ngờ."))
         btn_st1.pack(side="left", padx=(0, 4))
 
-        btn_st2 = ctk.CTkButton(quick_style_row, text="😂 Hài hước", width=75, height=22, font=ctk.CTkFont(size=10),
+        btn_st2 = ctk.CTkButton(quick_style_row, text="😂 Hài hước", width=68, height=22, font=ctk.CTkFont(size=10),
                                 fg_color="#f59e0b", hover_color="#d97706",
                                 command=lambda: _insert_quick_style("Văn phong dí dỏm, châm biếm hài hước, dùng tiếng lóng mạng bắt trend cực chất."))
         btn_st2.pack(side="left", padx=(0, 4))
 
-        btn_st3 = ctk.CTkButton(quick_style_row, text="🎬 Review phim", width=85, height=22, font=ctk.CTkFont(size=10),
+        btn_st3 = ctk.CTkButton(quick_style_row, text="🎬 Review", width=60, height=22, font=ctk.CTkFont(size=10),
                                 fg_color="#8b5cf6", hover_color="#7c3aed",
                                 command=lambda: _insert_quick_style("Giọng kể chuyện review phim lôi cuốn, xưng anh ta/cô ấy/hắn, tạo bí ẩn giữ chân người xem."))
         btn_st3.pack(side="left", padx=(0, 4))
 
-        btn_st4 = ctk.CTkButton(quick_style_row, text="🕵️ Bí ẩn", width=65, height=22, font=ctk.CTkFont(size=10),
+        btn_st4 = ctk.CTkButton(quick_style_row, text="🕵️ Bí ẩn", width=55, height=22, font=ctk.CTkFont(size=10),
                                 fg_color="#06b6d4", hover_color="#0891b2",
                                 command=lambda: _insert_quick_style("Không khí u ám, hồi hộp nghẹt thở, ngắt nhịp rùng rợn khơi gợi tò mò."))
         btn_st4.pack(side="left", padx=(0, 4))
 
-        btn_clear_st = ctk.CTkButton(quick_style_row, text="🗑 Xóa", width=50, height=22, font=ctk.CTkFont(size=10),
+        btn_clear_st = ctk.CTkButton(quick_style_row, text="🗑 Xóa", width=42, height=22, font=ctk.CTkFont(size=10),
                                      fg_color="#4b5563", hover_color="#374151",
                                      command=lambda: [self.custom_prompt_textbox.delete("1.0", "end"), self._save_settings()])
         btn_clear_st.pack(side="left")
@@ -1581,7 +1590,9 @@ class DouyinEditorApp(ctk.CTk):
                 topic_code = tid
                 break
         else:
-            if "100" in topic_val or "Hardcore" in topic_val:
+            if "Làm Đẹp" in topic_val or "Skincare" in topic_val or "Grooming" in topic_val or "Nam" in topic_val:
+                topic_code = "men_beauty_grooming"
+            elif "100" in topic_val or "Hardcore" in topic_val:
                 topic_code = "minecraft_100_days_hardcore"
             elif "Trẻ Em" in topic_val or "nhí" in topic_val or "Thiếu Nhi" in topic_val:
                 topic_code = "minecraft_kids"

@@ -67,6 +67,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--no-bgm", action="store_true", help="Tat nhac nen (chi giu lai giong doc TTS).")
     parser.add_argument("--bgm-volume", type=float, default=1.0, help="Am luong nhac nen BGM goc (mac dinh: 1.0 = 100%%).")
     parser.add_argument("--separation-speed", type=str, default="turbo", choices=["turbo", "fast", "balanced", "hq"], help="Toc do tach AI MDX-Net (mac dinh: turbo).")
+    parser.add_argument("--topic", type=str, default="general_storytelling", help="Chu de bien kich dich thuat (men_beauty_grooming, general_storytelling, movie_anime_recap, ...).")
     parser.add_argument("--check-api", action="store_true", help="Kiem tra trang thai va Rate Limit cua AI API Key.")
     parser.add_argument("--blur-x", type=int, default=293, help="Toa do X vung lam mo (pixel, mac dinh: 293).")
     parser.add_argument("--blur-y", type=int, default=517, help="Toa do Y vung lam mo (pixel, mac dinh: 517).")

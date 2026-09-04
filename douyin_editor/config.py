@@ -434,6 +434,44 @@ class TTSConfig:
 
 
 TRANSLATION_TOPIC_PRESETS = {
+    "men_beauty_grooming": {
+        "id": "men_beauty_grooming",
+        "name": "💈 Làm Đẹp, Skincare & Grooming Nam Giới (FB Reels / Shorts Chuẩn Men)",
+        "description": "Chuyên biệt cho video ngắn Facebook Reels / TikTok về chăm sóc da nam, sáp vuốt tóc, cạo râu, phối đồ, nâng tầm visual và phong cách phái mạnh.",
+        "prompt_context": (
+            "CHỦ ĐỀ & BỐI CẢNH ĐẶC BIỆT: LÀM ĐẸP, CHĂM SÓC DA (SKINCARE), TẠO KIỂU TÓC, GROOMING & PHONG CÁCH NAM GIỚI CHO VIDEO NGẮN FACEBOOK (FB REELS / SHORTS / TIKTOK).\n\n"
+            "1. TÂM LÝ KHÁN GIẢ & NGHỆ THUẬT BIÊN KỊCH VIDEO NGẮN FB VIRAL CHO NAM GIỚI:\n"
+            "- Tệp khán giả: Nam giới trẻ, học sinh, sinh viên, dân văn phòng, phái mạnh muốn nâng cấp ngoại hình (Glow-up) nhưng chuộng sự đơn giản, nhanh gọn, hiệu quả thực tế.\n"
+            "- Giọng điệu (Tone & Voice): Nam tính, dứt khoát, tự tin, gần gũi, chân thành như người anh em chia sẻ kinh nghiệm ('bro / anh em'), không dùng từ ngữ quá yểu điệu, hoa mỹ hay giáo điều.\n"
+            "- Hook 3 giây đầu giữ chân (High Retention Hook): Đánh thẳng vào nỗi đau hoặc vấn đề nhức nhối của nam giới ('3 sai lầm rửa mặt khiến da anh em mãi không hết dầu mụn...', 'Nếu không muốn mất điểm với crush, bỏ ngay thói quen này!', 'Mẹo tút lại vẻ đẹp trai chỉ trong 2 phút buổi sáng...').\n"
+            "- Xưng hô chuẩn phong cách phái mạnh: 'mình / anh em' hoặc 'mình / các ông' hoặc 'tôi / các bác'; ngôi thứ ba dùng 'anh chàng này / ông bạn này / phái mạnh'.\n"
+            "- Nhịp điệu câu văn: Ngắn gọn, dứt khoát, dễ hiểu, trực quan, phù hợp hoàn hảo với nhịp điệu nhanh và giọng đọc AI dứt khoát trên Facebook Reels.\n\n"
+            "2. BỘ TỪ ĐIỂN CHUYỂN NGỮ CHUYÊN SÂU CHO SKINCARE & GROOMING NAM:\n"
+            "  • Chăm sóc da (Skincare) & Trị mụn:\n"
+            "    - 洁面 / 洗面奶 -> Sữa rửa mặt nam (kiềm dầu / làm sạch sâu lỗ chân lông)\n"
+            "    - 爽肤水 / 柔肤水 -> Nước hoa hồng / Toner cân bằng da cấp ẩm\n"
+            "    - 精华 / 原液 -> Serum tinh chất dưỡng da / Serum phục hồi sáng da\n"
+            "    - 乳液 / 面霜 -> Kem dưỡng ẩm / Kem khóa ẩm cho nam\n"
+            "    - 防晒 / 防晒霜 -> Kem chống nắng (nâng tông tự nhiên, kiềm dầu không bết rít)\n"
+            "    - 控油 / 去油 -> Kiềm dầu / Hút sạch bã nhờn dầu thừa\n"
+            "    - 黑头 / 白头 / 闭口 -> Mụn đầu đen / Mụn cám / Mụn ẩn li ti\n"
+            "    - 痘痘 / 痘印 / 泛红 -> Mụn viêm sưng / Vết thâm mụn / Da ửng đỏ kích ứng\n"
+            "    - 毛孔粗大 / 收缩毛孔 -> Lỗ chân lông to / Se khít thu nhỏ lỗ chân lông\n"
+            "    - 去角质 / 清洁面膜 -> Tẩy tế bào chết định kỳ / Mặt nạ đất sét hút độc tố\n"
+            "    - 男士素颜霜 -> Kem lười dưỡng trắng nâng tông chuẩn men (không lộ vân kem)\n"
+            "    - 润唇膏 -> Son dưỡng môi nam (chống khô nẻ, mềm môi không bóng nhờn)\n\n"
+            "  • Tóc tai, Cạo râu, Ngoại hình & Phong cách (Grooming & Style):\n"
+            "    - 发蜡 / 发泥 / 发胶 -> Sáp vuốt tóc / Pomade tạo kiểu / Gôm xịt giữ nếp\n"
+            "    - 吹风机 / 吹蓬松 -> Máy sấy tóc / Sấy tạo độ phồng bồng bềnh (Volume)\n"
+            "    - 刮胡刀 / 剃须刀 -> Dao cạo râu / Máy cạo râu điện đa năng\n"
+            "    - 须后水 / 须后乳 -> Nước dưỡng Aftershave làm dịu da sau cạo râu\n"
+            "    - 发型 / 碎盖 / 三七分 -> Kiểu tóc nam đẹp (Side part, Layer nam, Textured crop)\n"
+            "    - 穿搭 / 改造 -> Phối đồ thời trang / Màn lột xác thay đổi diện mạo (Glow-up)\n"
+            "    - 颜值 / 变帅 -> Nâng tầm visual / Đẹp trai phong độ / Tút lại vẻ bảnh bao\n"
+            "    - 邋遢 / 油腻 -> Xuề xòa luộm thuộm / Da mặt bóng dầu kém sắc\n"
+            "    - 气质 / 男人味 -> Khí chất phái mạnh / Phong độ chuẩn men đầy nam tính"
+        )
+    },
     "minecraft_100_days_hardcore": {
         "id": "minecraft_100_days_hardcore",
         "name": "🔥 Minecraft 100 Ngày Hardcore (Cực kịch tính, 1 mạng duy nhất)",
@@ -646,6 +684,18 @@ TRANSLATION_TOPIC_PRESETS = {
         "name": "🌐 Kể Chuyện & Thuyết Minh Viral Tổng Hợp (Dẫn dắt cảm xúc, chuẩn TikTok/Reels)",
         "description": "Dịch thuật tổng quát, chuẩn xác và trung thực với nội dung gốc.",
         "prompt_context": "CHỦ ĐỀ: Video đa dụng ngắn. Văn phong tự nhiên, súc tích, chuẩn tiếng Việt hiện đại."
+    },
+    "men_skincare": {
+        "id": "men_beauty_grooming",
+        "name": "💈 Làm Đẹp, Skincare & Grooming Nam Giới (FB Reels / Shorts Chuẩn Men)",
+        "description": "Chăm sóc da, tạo kiểu tóc, cạo râu và làm đẹp cho nam giới.",
+        "prompt_context": "CHỦ ĐỀ: Làm đẹp & Skincare cho nam giới trên Facebook Reels. Văn phong nam tính, cuốn hút, xưng 'mình/anh em', thuật ngữ grooming chuẩn."
+    },
+    "men_grooming": {
+        "id": "men_beauty_grooming",
+        "name": "💈 Làm Đẹp, Skincare & Grooming Nam Giới (FB Reels / Shorts Chuẩn Men)",
+        "description": "Chăm sóc da, tạo kiểu tóc, cạo râu và làm đẹp cho nam giới.",
+        "prompt_context": "CHỦ ĐỀ: Làm đẹp & Skincare cho nam giới trên Facebook Reels. Văn phong nam tính, cuốn hút, xưng 'mình/anh em', thuật ngữ grooming chuẩn."
     }
 }
 

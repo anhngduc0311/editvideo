@@ -77,14 +77,19 @@ def build_translation_system_instruction(config: PipelineConfig) -> str:
     Biên dịch video ngắn Douyin/TikTok sang Tiếng Việt với cốt truyện liền mạch, kịch tính,
     hook 3s đầu cuốn hút, giữ chân người xem tối đa và nhịp điệu hoàn hảo cho giọng đọc CapCut TTS.
     """
-    topic_id = getattr(config, "topic_preset", "minecraft_kids")
+    topic_id = getattr(config, "topic_preset", "general_storytelling")
     custom_prompt = getattr(config, "custom_translation_prompt", None)
 
+    preset = TRANSLATION_TOPIC_PRESETS.get(topic_id, TRANSLATION_TOPIC_PRESETS.get("general_storytelling", {}))
+    preset_ctx = preset.get("prompt_context", "")
+
     if custom_prompt and custom_prompt.strip():
-        topic_context = f"BỐI CẢNH & YÊU CẦU ĐẶC THÙ (TÙY CHỈNH TỪ NGƯỜI DÙNG):\n{custom_prompt.strip()}"
+        if preset_ctx:
+            topic_context = f"{preset_ctx}\n\n[GHI CHÚ & YÊU CẦU TÙY CHỈNH THÊM TỪ NGƯỜI DÙNG]:\n{custom_prompt.strip()}"
+        else:
+            topic_context = f"BỐI CẢNH & YÊU CẦU ĐẶC THÙ (TÙY CHỈNH TỪ NGƯỜI DÙNG):\n{custom_prompt.strip()}"
     else:
-        preset = TRANSLATION_TOPIC_PRESETS.get(topic_id, TRANSLATION_TOPIC_PRESETS.get("minecraft_kids", {}))
-        topic_context = preset.get("prompt_context", "")
+        topic_context = preset_ctx
 
     return (
         "Bạn là đạo diễn kịch bản & chuyên gia biên kịch phụ đề video ngắn (Douyin/TikTok/YouTube Shorts/Reels) từ Tiếng Trung sang Tiếng Việt xuất sắc nhất.\n"
