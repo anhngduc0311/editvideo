@@ -21,8 +21,7 @@ from pydub import AudioSegment
 import requests
 from tqdm import tqdm
 
-from capcut_tts_api import CapCutClient
-from config import PipelineConfig, TTSConfig, VOICE_PRESETS
+from config import PipelineConfig, TTSConfig, VOICE_PRESETS, get_voice_preset
 from transcriber import SubtitleItem
 
 from concurrent.futures import ThreadPoolExecutor
@@ -61,6 +60,7 @@ class CapCutTTSEngine:
     """
 
     def __init__(self):
+        from capcut_tts_api import CapCutClient
         self.client = CapCutClient()
         self.session = requests.Session()
         adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=2)
@@ -179,6 +179,13 @@ class CapCutTTSEngine:
         return [(t, None, 0) for t in texts]
 
 
+def create_tts_engine(voice: str):
+    if get_voice_preset(voice).get("provider") == "openvoice":
+        from voice_clone import JapaneseCloneTTSEngine
+        return JapaneseCloneTTSEngine()
+    return CapCutTTSEngine()
+
+
 class VietnameseTTSSynchronizer:
     """
     Module đọc phụ đề tiếng Việt bằng CapCut TTS chính chủ và đồng bộ chính xác vào timeline video.
@@ -188,7 +195,7 @@ class VietnameseTTSSynchronizer:
     def __init__(self, config: PipelineConfig):
         self.config = config
         self.tts_config: TTSConfig = config.tts_config
-        self.engine = CapCutTTSEngine()
+        self.engine = create_tts_engine(self.tts_config.voice)
 
     @staticmethod
     def _clean_text(text: str) -> str:
@@ -197,7 +204,7 @@ class VietnameseTTSSynchronizer:
         if not re.search(r"[\w\d\u00C0-\u1EF9]", text, re.UNICODE):
             return ""
         # Đảm bảo có dấu câu kết thúc để giọng đọc có ngữ điệu trọn vẹn
-        if text[-1] not in ".!?":
+        if text[-1] not in ".!?。！？":
             text += "."
         return text
 
@@ -247,7 +254,7 @@ class VietnameseTTSSynchronizer:
                 continue
 
             # Tách theo các dấu kết thúc câu (. ! ? … ; \n)
-            sentence_parts = [p.strip() for p in re.split(r'(?<=[.!?…;\n])\s+', raw_text) if p.strip()]
+            sentence_parts = [p.strip() for p in re.split(r'(?<=[。！？])|(?<=[.!?…;\n])\s+', raw_text) if p.strip()]
             
             # Làm sạch và tách nhỏ các câu quá dài có dấu phẩy
             refined_sentences: List[str] = []

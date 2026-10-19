@@ -716,14 +716,7 @@ class DouyinEditorApp(ctk.CTk):
         tts_row.pack(fill="x", padx=12, pady=4)
         ctk.CTkLabel(tts_row, text="Giọng đọc:").pack(side="left", padx=(0, 4))
 
-        voice_options = [
-            "🔥 Cô Gái Hoạt Ngôn (CapCut Chính Chủ)",
-            "🔥 Thanh Niên Tự Tin (CapCut Chính Chủ)",
-            "🌸 Nhỏ Ngọt Ngào (CapCut Nữ Dễ Thương)",
-            "✨ Mai (CapCut Nữ Truyền Cảm)",
-            "🎙️ Giọng Nữ Phổ Thông (CapCut Chuẩn)",
-            "⚡ Kenny Đại Đế (CapCut Giọng Ngầu)"
-        ]
+        voice_options = [preset["name"] for preset in VOICE_PRESETS.values()]
 
         self.cmb_voice = ctk.CTkComboBox(
             tts_row,
@@ -1181,12 +1174,15 @@ class DouyinEditorApp(ctk.CTk):
             try:
                 import io, tempfile, winsound, pathlib
                 from pydub import AudioSegment
-                from tts_synchronizer import CapCutTTSEngine
+                from tts_synchronizer import create_tts_engine
 
                 tts_dir = pathlib.Path(__file__).parent.parent / "tts"
                 sample_file = None
 
-                if "Hoạt Ngôn" in chosen or "hoat_ngon" in chosen:
+                selected_preset = next((p for p in VOICE_PRESETS.values() if p["name"] == chosen), {})
+                if selected_preset.get("preview_file"):
+                    sample_file = tts_dir / selected_preset["preview_file"]
+                elif "Hoạt Ngôn" in chosen or "hoat_ngon" in chosen:
                     if (tts_dir / "thanhnientutin.mp3").exists():
                         sample_file = tts_dir / "thanhnientutin.mp3"
                     elif (tts_dir / "cogaihoatngon.mp3").exists():
@@ -1203,10 +1199,9 @@ class DouyinEditorApp(ctk.CTk):
                     seg = AudioSegment.from_file(str(sample_file))
                     seg.export(str(tmp_wav), format="wav")
                     winsound.PlaySound(str(tmp_wav), winsound.SND_FILENAME | winsound.SND_ASYNC)
-                    self._append_log(f"Đang phát mẫu giọng CapCut: {sample_file.name} ({chosen})", "AUDIO")
+                    self._append_log(f"Đang phát mẫu giọng: {sample_file.name} ({chosen})", "AUDIO")
                 else:
                     # Gọi trực tiếp CapCut TTS API
-                    engine = CapCutTTSEngine()
                     voice_code = "BV074_streaming"
                     res_id = "7102355709945188865"
                     for p_val in VOICE_PRESETS.values():
@@ -1215,13 +1210,16 @@ class DouyinEditorApp(ctk.CTk):
                             res_id = p_val["resource_id"]
                             break
 
+                    engine = create_tts_engine(voice_code)
                     sample_text = "Xin chào các bạn, đây là bản nghe thử giọng đọc CapCut của bạn."
+                    if selected_preset.get("language") == "ja":
+                        sample_text = "こんにちは！みんな、マインクラフトで冒険しよう！"
                     res_list = engine.synthesize_phrases([sample_text], voice=voice_code, resource_id=res_id)
                     if res_list and res_list[0][1]:
                         seg = AudioSegment.from_file(io.BytesIO(res_list[0][1]))
                         seg.export(str(tmp_wav), format="wav")
                         winsound.PlaySound(str(tmp_wav), winsound.SND_FILENAME | winsound.SND_ASYNC)
-                        self._append_log(f"Đang phát giọng đọc CapCut trực tiếp: {chosen}", "AUDIO")
+                        self._append_log(f"Đang phát giọng đọc: {chosen}", "AUDIO")
                     else:
                         self._append_log(f"Không nhận được âm thanh từ CapCut API cho giọng {chosen}", "WARNING")
             except Exception as e:

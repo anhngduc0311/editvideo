@@ -1,5 +1,5 @@
 # ==============================================================================
-# Python Bytecode & Cache
+# Python Bytecode & Cache (Mọi thư mục)
 # ==============================================================================
 __pycache__/
 *.py[cod]
@@ -32,21 +32,38 @@ env.bak/
 venv.bak/
 
 # ==============================================================================
-# Douyin Video Editor - Media & Working Directories
+# Binaries & Executables
 # ==============================================================================
-# Bỏ qua các thư mục video tải về, video render và thư mục làm việc tạm thời
-/douyin_editor/downloads/
-/douyin_editor/output/
-/douyin_editor/outputs/
-/douyin_editor/workspace_temp/
-/douyin_editor/temp/
+*.exe
+*.dll
+*.pyd
+*.dylib
+
+# ==============================================================================
+# Media, Outputs & Temporary Working Directories
+# ==============================================================================
+# Thư mục xuất video, tải về và làm việc tạm thời (ở mọi cấp thư mục)
 downloads/
 output/
 outputs/
 workspace_temp/
 temp/
+**/downloads/
+**/output/
+**/outputs/
+**/workspace_temp/
+**/temp/
 
-# Bỏ qua các file video/audio/phụ đề sinh ra trong quá trình render
+# File tạm khi tải xuống & render
+*.part
+*.download
+*.download.*
+*.crdownload
+*.tmp
+*.temp
+*.bak
+
+# Các định dạng media sinh ra trong quá trình download/render/tách nhạc
 *.mp4
 *.m4v
 *.mkv
@@ -56,19 +73,59 @@ temp/
 *.wav
 *.flac
 *.m4a
+*.aac
+*.opus
+*.ogg
+*.aiff
+*.aif
 *.srt
 
-# Giữ lại các file giọng mẫu chuẩn trong thư mục tts/
-!tts/
-!tts/**
-
-# Bỏ qua các file test audio sinh ra ở root
+# File test audio / video tạm thời ở root
 /capcut_*.mp3
 /sample_*.mp3
 /test_*.mp3
 /test_*.wav
 /test_*.srt
 /test_*.mp4
+
+# Giữ lại các file âm thanh mẫu chuẩn của hệ thống
+!douyin_editor/sample_*.mp3
+!douyin_editor/test_*.mp3
+!tts/cogaihoatngon.mp3
+!tts/thanhnientutin.mp3
+!tts/japanese_youtube_voice_clone.mp3
+
+# ==============================================================================
+# TTS Voice Clone, Vendor & External Resources
+# ==============================================================================
+# Thư viện bên thứ ba và tài nguyên mô hình clone giọng
+tts/vendor/
+vendor/
+**/vendor/
+tts/youtube_voice_reference/
+tts/models/
+tts/japanese_male_*.mp3
+tts/test_*.mp3
+tts/temp_*.mp3
+
+# ==============================================================================
+# Model Weights & AI Caches (Whisper, Demucs, MDX-Net, OpenVoice, etc.)
+# ==============================================================================
+.cache/
+models/
+**/models/
+whisper_models/
+**/whisper_models/
+demucs/
+**/demucs/
+checkpoints/
+**/checkpoints/
+*.pt
+*.pth
+*.bin
+*.onnx
+*.safetensors
+*.ckpt
 
 # ==============================================================================
 # Secrets, Cookies & User Configs
@@ -82,26 +139,17 @@ cookie.txt
 *.cookies
 .douyin_editor_config.json
 device.json
-
-# ==============================================================================
-# Model Weights & AI Caches (Whisper, Demucs, etc.)
-# ==============================================================================
-.cache/
-models/
-whisper_models/
-/douyin_editor/whisper_models/
-*.pt
-*.pth
-*.bin
-*.onnx
-*.safetensors
-demucs/
+settings.json
+*.local.json
 
 # ==============================================================================
 # Logs & Testing
 # ==============================================================================
 *.log
 logs/
+**/logs/
+state/
+**/state/
 .pytest_cache/
 .coverage
 htmlcov/
@@ -113,6 +161,8 @@ htmlcov/
 # ==============================================================================
 .vscode/
 .idea/
+.agents/
+.gemini/
 *.swp
 *.swo
 *~

@@ -383,6 +383,16 @@ SUBTITLE_PRESETS = {
 
 
 VOICE_PRESETS = {
+    "japanese_minecraft_clone": {
+        "name": "🎮 Nam Nhật Minecraft (Clone từ video)",
+        "voice": "openvoice_japanese_minecraft",
+        "resource_id": "",
+        "rate": "1.0",
+        "provider": "openvoice",
+        "language": "ja",
+        "preview_file": "japanese_youtube_voice_clone.mp3",
+    },
+
     "co_gai_hoat_ngon": {
         "name": "🔥 Cô Gái Hoạt Ngôn (CapCut Chính Chủ)",
         "voice": "BV074_streaming",
@@ -420,6 +430,17 @@ VOICE_PRESETS = {
         "rate": "1.0"
     }
 }
+
+
+def get_voice_preset(voice: str) -> dict:
+    for key, preset in VOICE_PRESETS.items():
+        if voice in (key, preset["voice"], preset["name"]):
+            return preset
+    return {}
+
+
+def get_tts_language(voice: str) -> str:
+    return get_voice_preset(voice).get("language", "vi")
 
 
 @dataclass
