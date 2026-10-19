@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 from tqdm import tqdm
 
-from config import PipelineConfig
+from config import PipelineConfig, LANGUAGE_NAMES
 
 # Tự động nạp FFmpeg vào PATH nếu có static_ffmpeg
 try:
@@ -319,10 +319,11 @@ class WhisperTranscriber:
 
         audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
 
+        source_name = LANGUAGE_NAMES.get(self.language, self.language)
         prompt = (
             "Bạn là hệ thống nhận diện giọng nói (Speech-to-Text) chuyên nghiệp.\n"
-            "Hãy nghe file âm thanh tiếng Trung này và xuất ra phụ đề chuẩn định dạng file SRT:\n"
-            "- Giữ nguyên ngôn ngữ gốc tiếng Trung.\n"
+            f"Hãy nghe file âm thanh {source_name} này và xuất ra phụ đề chuẩn định dạng file SRT:\n"
+            f"- Giữ nguyên ngôn ngữ gốc {source_name}.\n"
             "- Số thứ tự index tăng dần (1, 2, 3...).\n"
             "- Timeline chính xác dạng '00:00:00,000 --> 00:00:00,000'.\n"
             "- Chỉ trả về duy nhất nội dung file SRT, không thêm lời giải thích hay bọc markdown."
@@ -500,7 +501,7 @@ class WhisperTranscriber:
                 
                 # Thử nhận diện với các mã ngôn ngữ tương thích
                 text = ""
-                for l_candidate in [lang_code, "zh-CN", "cmn-Hans-CN"]:
+                for l_candidate in ([lang_code, "cmn-Hans-CN"] if self.language.lower().startswith("zh") else [lang_code]):
                     try:
                         text = r.recognize_google(audio_data, language=l_candidate).strip()
                         if text:

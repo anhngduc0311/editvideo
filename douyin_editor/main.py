@@ -34,7 +34,9 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Tool tu dong hoa Re-up & Dich thuat Video Douyin sang Tieng Viet bang AI."
     )
-    parser.add_argument("-u", "--url", type=str, help="Link video Douyin hoac chuoi chia se.")
+    parser.add_argument("-u", "--url", type=str, help="Link video YouTube / Douyin hoac chuoi chia se.")
+    parser.add_argument("--source-language", choices=["zh", "en"], default="zh", help="Ngon ngu goc: zh (Trung), en (Anh).")
+    parser.add_argument("--target-language", choices=["vi", "ja"], default=None, help="Ngon ngu dich: vi (Viet), ja (Nhat); mac dinh theo giong doc.")
     parser.add_argument("--provider", type=str, default="deepseek", choices=["deepseek", "gemini"], help="AI Provider dich thuat (deepseek hoac gemini).")
     parser.add_argument("-k", "--deepseek-key", type=str, default=os.getenv("DEEPSEEK_API_KEY", "sk-7731fa779b8a46fda7e9e48c46bce715"), help="API Key DeepSeek.")
     parser.add_argument("-m", "--deepseek-model", type=str, default="deepseek-v4-flash", help="Model DeepSeek (mac dinh: deepseek-v4-flash).")
@@ -46,7 +48,7 @@ def parse_arguments() -> argparse.Namespace:
         "--voice",
         type=str,
         default="co-gai-hoat-ngon",
-        choices=["co-gai-hoat-ngon", "thanh-nien-tu-tin", "nho-ngot-ngao", "mai-truyen-cam", "nu-pho-thong", "kenny-dai-de", "BV074_streaming", "BV075_streaming"],
+        choices=["co-gai-hoat-ngon", "thanh-nien-tu-tin", "nho-ngot-ngao", "mai-truyen-cam", "nu-pho-thong", "kenny-dai-de", "BV074_streaming", "BV075_streaming", "japanese-minecraft-clone"],
         help="Giong doc CapCut (co-gai-hoat-ngon, thanh-nien-tu-tin, nho-ngot-ngao, mai-truyen-cam, nu-pho-thong, kenny-dai-de)."
     )
     parser.add_argument("--speed", type=float, default=0.70, help="Toc do phat lai de AI doc phu de (mac dinh: 0.70x).")
@@ -155,6 +157,8 @@ def main():
         deepseek_api_key=deepseek_key,
         deepseek_model_name=args.deepseek_model,
         whisper_model_size=args.whisper_model,
+        whisper_language=args.source_language,
+        target_language=args.target_language,
         topic_preset=args.topic,
         speed_factor=args.speed,
         final_speed=args.final_speed,
@@ -204,6 +208,15 @@ def main():
             preset_name=args.voice
         )
     )
+
+    if args.target_language == "ja" or args.voice == "japanese-minecraft-clone":
+        from config import VOICE_PRESETS
+        japanese = VOICE_PRESETS["japanese_minecraft_clone"]
+        config.tts_config = TTSConfig(
+            voice=japanese["voice"], resource_id=japanese["resource_id"],
+            rate=japanese["rate"], preset_name=japanese["name"])
+        if args.target_language == "vi":
+            raise ValueError("Giong Nhat can ngon ngu dich ja; bo --target-language vi.")
 
     pipeline = DouyinAutoPipeline(config=config)
     try:

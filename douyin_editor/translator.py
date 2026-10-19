@@ -29,7 +29,7 @@ except ImportError:
 
 import requests
 
-from config import PipelineConfig, TRANSLATION_TOPIC_PRESETS, get_tts_language
+from config import PipelineConfig, TRANSLATION_TOPIC_PRESETS, get_target_language, LANGUAGE_NAMES
 from transcriber import SubtitleItem
 
 logger = logging.getLogger(__name__)
@@ -77,10 +77,10 @@ def build_translation_system_instruction(config: PipelineConfig) -> str:
     Biên dịch video ngắn Douyin/TikTok sang Tiếng Việt với cốt truyện liền mạch, kịch tính,
     hook 3s đầu cuốn hút, giữ chân người xem tối đa và nhịp điệu hoàn hảo cho giọng đọc CapCut TTS.
     """
-    if get_tts_language(config.tts_config.voice) == "ja":
+    if get_target_language(config) == "ja":
         custom = getattr(config, "custom_translation_prompt", "") or ""
         return (
-            "Bạn là biên dịch viên phụ đề video sang tiếng Nhật. "
+            f"Bạn là biên dịch viên phụ đề video từ {LANGUAGE_NAMES.get(config.whisper_language, config.whisper_language)} sang tiếng Nhật. "
             "Dịch tự nhiên, súc tích, phù hợp giọng nam kể chuyện; dùng thuật ngữ Minecraft tiếng Nhật khi có. "
             "Giữ đúng ý, tên riêng và mạch truyện. Không thêm chi tiết. "
             "Bảo toàn số lượng dòng và index. Chỉ trả về [index] <bản dịch tiếng Nhật>, không giải thích. "
@@ -119,9 +119,10 @@ def build_translation_system_instruction(config: PipelineConfig) -> str:
 
 
 def build_batch_prompt(batch: List[SubtitleItem], full_story_context: Optional[str] = None,
-                       target_language: str = "vi") -> str:
+                       target_language: str = "vi", source_language: str = "zh") -> str:
     """Tạo prompt danh sách câu [index] tối ưu kèm bối cảnh cốt truyện toàn bài để AI dịch chuẩn xác nhất."""
-    target_name = "Tiếng Nhật" if target_language == "ja" else "Tiếng Việt"
+    source_name = LANGUAGE_NAMES.get(source_language, source_language)
+    target_name = LANGUAGE_NAMES.get(target_language, target_language)
     lines = [f"[{item.index}] {item.text.strip()}" for item in batch]
     batch_content = "\n".join(lines)
 
@@ -135,7 +136,7 @@ def build_batch_prompt(batch: List[SubtitleItem], full_story_context: Optional[s
 
     return (
         f"{story_section}"
-        f"[DANH SÁCH {len(batch)} CÂU PHỤ ĐỀ TIẾNG TRUNG CẦN DỊCH CHO PHÂN ĐOẠN NÀY]:\n"
+        f"[DANH SÁCH {len(batch)} CÂU PHỤ ĐỀ {source_name.upper()} CẦN DỊCH CHO PHÂN ĐOẠN NÀY]:\n"
         f"{batch_content}\n\n"
         f"Hãy dịch toàn bộ {len(batch)} câu trên sang {target_name} chuẩn theo đúng mạch cốt truyện và nhịp điệu video. "
         f"Bắt buộc trả về đúng {len(batch)} dòng theo định dạng [index] <câu dịch>:"
@@ -271,7 +272,8 @@ def translate_batch_resilient(
     engine_name: str = "AI",
     max_batch_retries: int = 2,
     full_story_context: Optional[str] = None,
-    target_language: str = "vi"
+    target_language: str = "vi",
+    source_language: str = "zh"
 ) -> List[SubtitleItem]:
     """
     Dịch một batch phụ đề với bối cảnh kịch bản cốt truyện toàn bài, tự sửa lỗi, tự bù câu thiếu và chống lệch timeline 100%.
@@ -279,8 +281,9 @@ def translate_batch_resilient(
     if not batch:
         return []
 
-    target_name = "Tiếng Nhật" if target_language == "ja" else "Tiếng Việt"
-    prompt = build_batch_prompt(batch, full_story_context=full_story_context, target_language=target_language)
+    source_name = LANGUAGE_NAMES.get(source_language, source_language)
+    target_name = LANGUAGE_NAMES.get(target_language, target_language)
+    prompt = build_batch_prompt(batch, full_story_context=full_story_context, target_language=target_language, source_language=source_language)
     trans_map: Dict[int, str] = {}
 
     # Lần gọi chính thức đầu tiên
@@ -304,7 +307,7 @@ def translate_batch_resilient(
         retry_prompt = (
             f"⚠️ LƯU Ý: Vui lòng dịch ĐẦY ĐỦ các câu sau đây sang {target_name}. "
             f"Bắt buộc trả về đúng từng dòng theo định dạng [index] <câu dịch>:\n\n"
-            f"{build_batch_prompt(missing_items, full_story_context=full_story_context, target_language=target_language)}"
+            f"{build_batch_prompt(missing_items, full_story_context=full_story_context, target_language=target_language, source_language=source_language)}"
         )
         try:
             retry_res = call_ai_fn(retry_prompt)
@@ -323,7 +326,7 @@ def translate_batch_resilient(
         for m_item in missing_items:
             try:
                 single_prompt = (
-                    f"Dịch câu sau từ Tiếng Trung sang {target_name} tự nhiên (chỉ trả về duy nhất 1 dòng bản dịch):\n"
+                    f"Dịch câu sau từ {source_name} sang {target_name} tự nhiên (chỉ trả về duy nhất 1 dòng bản dịch):\n"
                     f"[{m_item.index}] {m_item.text}"
                 )
                 single_res = call_ai_fn(single_prompt)
@@ -627,7 +630,8 @@ class DeepSeekTranslator:
                     b_idx=1,
                     total_batches=1,
                     engine_name="DeepSeek API",
-                    target_language=get_tts_language(self.config.tts_config.voice),
+                    target_language=get_target_language(self.config),
+                    source_language=self.config.whisper_language,
                     full_story_context=full_story_context
                 )
                 pbar.update(total_items)
@@ -645,7 +649,8 @@ class DeepSeekTranslator:
                     b_idx=b_idx,
                     total_batches=total_batches,
                     engine_name="DeepSeek API",
-                    target_language=get_tts_language(self.config.tts_config.voice),
+                    target_language=get_target_language(self.config),
+                    source_language=self.config.whisper_language,
                     full_story_context=full_story_context
                 )
                 return b_idx, res_items
@@ -1040,7 +1045,8 @@ class ChatGPTWebTranslator:
                     b_idx=b_idx,
                     total_batches=total_batches,
                     engine_name="ChatGPT Web",
-                    target_language=get_tts_language(self.config.tts_config.voice),
+                    target_language=get_target_language(self.config),
+                    source_language=self.config.whisper_language,
                     full_story_context=full_story_context
                 )
                 final_translated_items.extend(batch_res)

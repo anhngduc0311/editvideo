@@ -432,6 +432,18 @@ VOICE_PRESETS = {
 }
 
 
+LANGUAGE_NAMES = {"zh": "Tiếng Trung", "en": "Tiếng Anh", "ja": "Tiếng Nhật", "vi": "Tiếng Việt"}
+TRANSLATION_MODES = {
+    "Tiếng Trung → Tiếng Việt": ("zh", "vi"),
+    "Tiếng Trung → Tiếng Nhật": ("zh", "ja"),
+    "Tiếng Anh → Tiếng Nhật": ("en", "ja"),
+}
+
+
+def get_target_language(config) -> str:
+    return config.target_language or get_tts_language(config.tts_config.voice)
+
+
 def get_voice_preset(voice: str) -> dict:
     for key, preset in VOICE_PRESETS.items():
         if voice in (key, preset["voice"], preset["name"]):
@@ -747,6 +759,7 @@ class PipelineConfig:
     gemini_model_name: str = "gemini-3.6-flash"
     whisper_model_size: str = "small"
     whisper_language: str = "zh"
+    target_language: Optional[str] = None
     whisper_server_url: str = field(default_factory=lambda: os.getenv("WHISPER_SERVER_URL", "http://localhost:8888"))
     
     # Batch Chunking & Translation Settings
