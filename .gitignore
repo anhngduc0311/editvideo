@@ -1,5 +1,5 @@
 # ==============================================================================
-# Python Bytecode & Cache
+# Python Bytecode & Cache (Áp dụng cho mọi thư mục con)
 # ==============================================================================
 __pycache__/
 *.py[cod]
@@ -32,21 +32,29 @@ env.bak/
 venv.bak/
 
 # ==============================================================================
-# Douyin Video Editor - Media & Working Directories
+# Binaries & Executables
 # ==============================================================================
-# Bỏ qua các thư mục video tải về, video render và thư mục làm việc tạm thời
-/douyin_editor/downloads/
-/douyin_editor/output/
-/douyin_editor/outputs/
-/douyin_editor/workspace_temp/
-/douyin_editor/temp/
+*.exe
+*.dll
+*.pyd
+*.dylib
+
+# ==============================================================================
+# Douyin Video Editor & Tach Giong - Media, Outputs & Temp Dirs
+# ==============================================================================
+# Các thư mục xuất file, tải về và làm việc tạm thời
 downloads/
 output/
 outputs/
 workspace_temp/
 temp/
+**/downloads/
+**/output/
+**/outputs/
+**/workspace_temp/
+**/temp/
 
-# Bỏ qua các file video/audio/phụ đề sinh ra trong quá trình render
+# Bỏ qua các file media sinh ra trong quá trình download/render/tách nhạc
 *.mp4
 *.m4v
 *.mkv
@@ -58,17 +66,29 @@ temp/
 *.m4a
 *.srt
 
-# Giữ lại các file giọng mẫu chuẩn trong thư mục tts/
-!tts/
-!tts/**
+# Giữ lại các file audio mẫu sẵn có
+!douyin_editor/sample_*.mp3
+!douyin_editor/test_*.mp3
+!tts/cogaihoatngon.mp3
+!tts/thanhnientutin.mp3
 
-# Bỏ qua các file test audio sinh ra ở root
+# Bỏ qua file âm thanh / video sinh ra tạm thời ở root
 /capcut_*.mp3
 /sample_*.mp3
 /test_*.mp3
 /test_*.wav
 /test_*.srt
 /test_*.mp4
+
+# ==============================================================================
+# TTS Voice Clone, Vendor & Reference Data
+# ==============================================================================
+tts/vendor/
+tts/youtube_voice_reference/
+tts/models/
+tts/*.wav
+tts/japanese_*.mp3
+vendor/
 
 # ==============================================================================
 # Secrets, Cookies & User Configs
@@ -84,16 +104,20 @@ cookie.txt
 device.json
 
 # ==============================================================================
-# Model Weights & AI Caches (Whisper, Demucs, etc.)
+# Model Weights & AI Caches (Whisper, Demucs, MDX-Net, OpenVoice, etc.)
 # ==============================================================================
 .cache/
 models/
+**/models/
+demucs/
+checkpoints/
+**/checkpoints/
 *.pt
 *.pth
 *.bin
 *.onnx
 *.safetensors
-demucs/
+*.ckpt
 
 # ==============================================================================
 # Logs & Testing
@@ -111,6 +135,8 @@ htmlcov/
 # ==============================================================================
 .vscode/
 .idea/
+.agents/
+.gemini/
 *.swp
 *.swo
 *~
