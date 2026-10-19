@@ -9,6 +9,8 @@ with tempfile.TemporaryDirectory() as directory:
         app = app_gui.DouyinEditorApp()
         app.withdraw()
         try:
+            app.key_entry.delete(0, "end")
+            app.key_entry.insert(0, "test-key")
             assert "Tiếng Anh → Tiếng Nhật" in app.cmb_translation_mode.cget("values")
             app.cmb_translation_mode.set("Tiếng Anh → Tiếng Nhật")
             app._on_translation_mode_changed("Tiếng Anh → Tiếng Nhật")

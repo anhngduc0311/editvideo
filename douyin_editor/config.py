@@ -739,7 +739,7 @@ class CookieConfig:
     """
     Cấu hình Cookie Douyin (Tránh lỗi: Fresh cookies needed)
     """
-    cookie_str: Optional[str] = None     # Chuỗi cookie dạng: "name=value; name2=value2..."
+    cookie_str: Optional[str] = field(default=None, repr=False)  # Chuỗi cookie đăng nhập
     cookie_file: Optional[Path] = None   # Đường dẫn file cookies.txt (Netscape format)
     browser_name: Optional[str] = None   # Lấy trực tiếp từ browser: "chrome", "edge", "brave", "firefox"
 
@@ -751,16 +751,17 @@ class PipelineConfig:
     """
     # API & AI Models (DeepSeek / ChatGPT Cookie / Gemini)
     llm_provider: str = "deepseek"  # "deepseek", "chatgpt_cookie", hoặc "gemini"
-    deepseek_api_key: str = field(default_factory=lambda: os.getenv("DEEPSEEK_API_KEY", "sk-7731fa779b8a46fda7e9e48c46bce715"))
+    deepseek_api_key: str = field(default_factory=lambda: os.getenv("DEEPSEEK_API_KEY", ""), repr=False)
     deepseek_model_name: str = "deepseek-v4-flash"
     deepseek_base_url: str = "https://api.deepseek.com"
-    chatgpt_cookie: str = field(default_factory=lambda: os.getenv("CHATGPT_COOKIE", ""))
+    chatgpt_cookie: str = field(default_factory=lambda: os.getenv("CHATGPT_COOKIE", ""), repr=False)
     chatgpt_model_name: str = "auto"
-    gemini_api_key: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
+    gemini_api_key: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""), repr=False)
     gemini_model_name: str = "gemini-3.6-flash"
     whisper_model_size: str = "small"
     whisper_language: str = "zh"
     target_language: Optional[str] = None
+    resume: bool = True
     whisper_server_url: str = field(default_factory=lambda: os.getenv("WHISPER_SERVER_URL", "http://localhost:8888"))
     
     # Batch Chunking & Translation Settings

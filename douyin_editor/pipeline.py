@@ -7,7 +7,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 import time
-from typing import Callable, Optional
+from dataclasses import asdict
+from typing import Callable, Optional, Tuple
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -17,7 +18,8 @@ from config import BlurRegion, CookieConfig, PipelineConfig, TRANSLATION_TOPIC_P
 from downloader import DouyinDownloader
 from preprocessor import VideoPreprocessor
 from transcriber import WhisperTranscriber
-from translator import create_translator
+from translator import create_translator, parse_srt_string
+from job_state import JobState, JobCancelled, check_cancelled, signature, file_stamp
 from subtitle_burner import SubtitleBurner
 from vocal_separator import VocalSeparator
 from tts_synchronizer import VietnameseTTSSynchronizer
@@ -51,6 +53,36 @@ class DouyinAutoPipeline:
         self.separator = VocalSeparator(config=self.config)
         self.tts_syncer = VietnameseTTSSynchronizer(config=self.config)
         self.compositor = VideoCompositor(config=self.config)
+        self.cancel_event = None
+
+    def _stage(self, state, name, key, operation):
+        check_cancelled(self.cancel_event)
+        cached = state.outputs(name, key) if self.config.resume else None
+        if cached:
+            logger.info("Tiếp tục: dùng lại bước %s đã hoàn tất.", name)
+            return cached
+        try:
+            paths = operation()
+        except Exception:
+            check_cancelled(self.cancel_event)
+            raise
+        check_cancelled(self.cancel_event)
+        state.complete(name, key, paths)
+        return paths
+
+    @staticmethod
+    def _select_render_subtitles(synced_srt: Path, translated_srt: Path) -> Path:
+        """A present but empty synchronization result must not hide the translation."""
+        for path in (synced_srt, translated_srt):
+            try:
+                items = parse_srt_string(path.read_text(encoding="utf-8-sig"))
+            except (OSError, UnicodeError):
+                continue
+            if items and all(s.text.strip() and s.end_seconds > s.start_seconds >= 0 for s in items):
+                if path != synced_srt:
+                    logger.warning("Phụ đề đồng bộ thiếu/rỗng; dùng bản dịch hợp lệ: %s", path)
+                return path
+        raise RuntimeError("Đã bật phụ đề nhưng không có file phụ đề hợp lệ để chèn vào video.")
 
     def print_pipeline_banner(self, input_url: str):
         """Hiển thị thông tin tổng quan quy trình làm việc trên Console"""
@@ -98,7 +130,8 @@ class DouyinAutoPipeline:
         progress_callback: Optional[Callable[[int, int, str, str], None]] = None,
         interactive_roi_callback: Optional[Callable[[Path, BlurRegion, Optional[SubtitleStyle]], Tuple[BlurRegion, Optional[SubtitleStyle]]]] = None,
         subtitles_callback: Optional[Callable[[dict], None]] = None,
-        review_subtitles_callback: Optional[Callable[[Path, Path], None]] = None
+        review_subtitles_callback: Optional[Callable[[Path, Path], None]] = None,
+        cancel_event=None
     ) -> Path:
         """
         Kích hoạt toàn bộ quy trình tự động.
@@ -108,12 +141,20 @@ class DouyinAutoPipeline:
         :param review_subtitles_callback: Hàm dừng lại chờ người dùng kiểm tra / duyệt phụ đề trước khi render
         """
         start_time = time.time()
+        self.cancel_event = cancel_event
+        self.tts_syncer.cancel_event = cancel_event
+        self.compositor.cancel_event = cancel_event
+        self.downloader.cancel_event = cancel_event
+        self.transcriber.cancel_event = cancel_event
+        check_cancelled(cancel_event)
+        state = JobState(self.config.work_dir / "jobs" / signature([douyin_url_or_text.strip(), custom_name])[:20])
         self.print_pipeline_banner(douyin_url_or_text)
 
         total_steps = 8
         overall_pbar = tqdm(total=total_steps, desc="[Tiến độ tổng thể]", bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} bước [{elapsed}<{remaining}]")
 
         def notify(step: int, title: str, msg: str):
+            check_cancelled(cancel_event)
             logger.info(f"[{step}/{total_steps}] {title} - {msg}")
             if progress_callback:
                 progress_callback(step, total_steps, title, msg)
@@ -124,11 +165,11 @@ class DouyinAutoPipeline:
             # ==========================================
             notify(1, "Bước 1: Tải video YouTube / Douyin", "Đang phân tích link và tải video chất lượng cao...")
             console.print("\n[bold cyan]▶ BƯỚC 1: Đang tải video từ YouTube / Douyin...[/bold cyan]")
-            raw_video = self.downloader.download(
+            raw_video = self._stage(state, "download", [douyin_url_or_text, custom_name], lambda: [self.downloader.download(
                 douyin_url_or_text,
                 custom_filename=custom_name,
                 progress_callback=lambda p, msg: notify(1, "Bước 1: Tải video Douyin", msg)
-            )
+            )])[0]
             video_id = raw_video.stem
             overall_pbar.update(1)
 
@@ -150,7 +191,7 @@ class DouyinAutoPipeline:
                     self.preprocessor.blur_config = chosen_res
 
             # Thư mục tạm riêng cho từng video
-            session_work_dir = self.config.work_dir / video_id
+            session_work_dir = state.directory
             session_work_dir.mkdir(parents=True, exist_ok=True)
 
             # Khai báo đường dẫn các tài nguyên trung gian
@@ -169,6 +210,9 @@ class DouyinAutoPipeline:
             video_height = raw_video_info["height"]
             orig_duration = raw_video_info["duration"]
             total_duration = orig_duration / self.config.speed_factor if self.config.speed_factor > 0 else orig_duration
+            audio_key = [file_stamp(raw_video), self.config.speed_factor,
+                         self.config.audio_mode, self.config.keep_bgm,
+                         self.config.separation_speed, self.config.vocal_model_name]
 
             # ==========================================
             # BƯỚC 2: XỬ LÝ ÂM THANH (GIỮ NGUYÊN GỐC / TÁCH BGM) & WHISPER STT
@@ -184,12 +228,12 @@ class DouyinAutoPipeline:
                 console.print(f"[bold cyan]▶ BƯỚC 2: Giữ nguyên âm thanh video gốc 0.70x (Không tách giọng, âm lượng {orig_vol_pct}%)...[/bold cyan]")
                 
                 orig_slowed_audio = session_work_dir / f"{video_id}_orig_slowed_44k.wav"
-                self.preprocessor.extract_slowed_original_audio(
+                self._stage(state, "audio", audio_key, lambda: (self.preprocessor.extract_slowed_original_audio(
                     input_video=raw_video,
                     output_audio=orig_slowed_audio,
                     sample_rate=44100,
                     channels=2
-                )
+                ), [orig_slowed_audio])[1])
                 bgm_track_path = orig_slowed_audio
                 whisper_audio_source = orig_slowed_audio
                 # Đặt âm lượng hòa âm cho compositor
@@ -199,32 +243,37 @@ class DouyinAutoPipeline:
                 notify(2, "Bước 2: Tách Giọng AI MDX-Net", f"Đang bóc tách nhạc nền gốc ra MP3 320k & giọng nói {source_name}...")
                 console.print("[bold cyan]▶ BƯỚC 2: Tách giọng AI MDX-Net -> Xuất BGM MP3 320k & Làm chậm 0.70x (100% âm lượng)...[/bold cyan]")
                 
-                bgm_orig_mp3, bgm_slowed, vocals_slowed = self.separator.process_pipeline_audio(
+                bgm_orig_mp3, bgm_slowed, vocals_slowed = self._stage(state, "audio", audio_key, lambda: list(self.separator.process_pipeline_audio(
                     raw_video_path=raw_video,
                     session_work_dir=session_work_dir,
                     video_id=video_id,
                     speed_factor=self.config.speed_factor,
                     progress_callback=lambda p, msg: notify(2, "Bước 2: Tách Giọng AI MDX-Net", msg)
-                )
+                )))
                 bgm_track_path = bgm_slowed
                 whisper_audio_source = vocals_slowed
 
             else:  # "mute_original"
                 notify(2, "Bước 2: Trích xuất Audio Siêu Tốc", f"Đang trích xuất audio và giảm tốc độ {self.config.speed_factor}x...")
                 extracted_audio = session_work_dir / f"{video_id}_slowed_audio.wav"
-                self.preprocessor.extract_audio_for_stt(
+                self._stage(state, "audio", audio_key, lambda: (self.preprocessor.extract_audio_for_stt(
                     input_video=raw_video,
                     output_audio=extracted_audio
-                )
+                ), [extracted_audio])[1])
                 bgm_track_path = None
                 whisper_audio_source = extracted_audio
 
             notify(2, "Bước 2: Local Speech-to-Text", f"Đang nhận diện giọng nói {source_name} qua Local STT Engine...")
             console.print(f"[bold cyan]▶ BƯỚC 2 (tiếp): Local STT nhận diện giọng nói {source_name} -> SRT...[/bold cyan]")
-            original_sub_items = self.transcriber.transcribe(
+            stt_key = [file_stamp(whisper_audio_source), self.config.whisper_language,
+                       self.config.whisper_model_size]
+            self._stage(state, "stt", stt_key, lambda: (self.transcriber.transcribe(
                 audio_path=whisper_audio_source,
                 output_srt=original_srt
-            )
+            ), [original_srt])[1])
+            original_sub_items = parse_srt_string(original_srt.read_text(encoding="utf-8"))
+            if not original_sub_items:
+                raise RuntimeError("Không có phụ đề nguồn hợp lệ để dịch.")
             
             # Tính toán thống kê tình trạng phụ đề
             from transcriber import calculate_subtitle_stats
@@ -246,12 +295,27 @@ class DouyinAutoPipeline:
             # ==========================================
             provider_title = "ChatGPT Web" if getattr(self.config, "llm_provider", "deepseek") == "chatgpt_cookie" else "DeepSeek"
             model_info = getattr(self.translator, "model_name", "auto")
-            notify(3, f"Bước 3: Dịch thuật {provider_title}", f"Đang dịch phụ đề Trung -> Việt bằng {provider_title} AI ({model_info})...")
+            notify(3, f"Bước 3: Dịch thuật {provider_title}", f"Đang dịch {source_name} → {target_name} bằng {provider_title} AI ({model_info})...")
             console.print(f"[bold cyan]▶ BƯỚC 3: Dịch phụ đề sang {target_name} bằng {provider_title} AI ({model_info})...[/bold cyan]")
-            raw_vn_subtitles = self.translator.translate_srt(
+            translation_key = [signature(original_srt.read_text(encoding="utf-8")),
+                               self.config.whisper_language, target_language,
+                               self.config.llm_provider, model_info, self.config.topic_preset,
+                               self.config.custom_translation_prompt]
+            self._stage(state, "translation", translation_key, lambda: (self.translator.translate_srt(
                 input_srt_path=original_srt,
                 output_srt_path=raw_vietnamese_srt
-            )
+            ), [raw_vietnamese_srt])[1])
+            if review_subtitles_callback:
+                notify(3, "Duyệt bản dịch", "Kiểm tra và sửa bản dịch trước khi tạo giọng đọc.")
+                review_subtitles_callback(session_work_dir, raw_vietnamese_srt)
+                check_cancelled(cancel_event)
+            raw_vn_subtitles = parse_srt_string(raw_vietnamese_srt.read_text(encoding="utf-8"))
+            if (len(raw_vn_subtitles) != len(original_sub_items) or
+                    [(s.index, s.start_seconds, s.end_seconds) for s in raw_vn_subtitles] !=
+                    [(s.index, s.start_seconds, s.end_seconds) for s in original_sub_items] or
+                    any(not s.text.strip() for s in raw_vn_subtitles)):
+                raise RuntimeError("Bản dịch phải giữ đủ câu, chỉ số và mốc thời gian của phụ đề nguồn.")
+            state.complete("translation", translation_key, [raw_vietnamese_srt])
 
             # Ghép phụ đề dịch vào danh sách gốc
             for idx, vn_item in enumerate(raw_vn_subtitles):
@@ -275,12 +339,17 @@ class DouyinAutoPipeline:
             # ==========================================
             notify(4, "Bước 4: CapCut TTS & Đồng bộ phụ đề", f"Đang đọc giọng {self.config.tts_config.preset_name or self.config.tts_config.voice} và căn khớp từng câu...")
             console.print(f"[bold cyan]▶ BƯỚC 4: Đọc phụ đề {target_name} bằng TTS ({self.config.tts_config.preset_name}) & đồng bộ timeline từng câu ngắn...[/bold cyan]")
-            tts_synced_audio, synced_vn_subtitles = self.tts_syncer.generate_and_sync(
+            tts_key = [signature(raw_vietnamese_srt.read_text(encoding="utf-8")),
+                       asdict(self.config.tts_config), total_duration, "strict-slots-v1",
+                       self.tts_syncer.engine._model_signature()
+                       if hasattr(self.tts_syncer.engine, "_model_signature") else None]
+            self._stage(state, "tts", tts_key, lambda: (self.tts_syncer.generate_and_sync(
                 subtitles=raw_vn_subtitles,
                 total_duration_seconds=total_duration,
                 output_audio_path=tts_synced_audio,
                 output_srt_path=synced_vietnamese_srt
-            )
+            ), [tts_synced_audio, synced_vietnamese_srt])[1])
+            synced_vn_subtitles = parse_srt_string(synced_vietnamese_srt.read_text(encoding="utf-8"))
 
             if subtitles_callback:
                 # Cập nhật timeline đã sync
@@ -308,11 +377,6 @@ class DouyinAutoPipeline:
 
             overall_pbar.update(2)
 
-            # Tùy chọn dừng lại để người dùng duyệt / sửa phụ đề trên GUI
-            if review_subtitles_callback:
-                notify(5, "Bước 5: Kiểm tra & Duyệt Phụ đề", "Đang chờ bạn kiểm tra & xác nhận phụ đề trên giao diện GUI...")
-                review_subtitles_callback(session_work_dir, synced_vietnamese_srt if synced_vietnamese_srt.exists() else raw_vietnamese_srt)
-
             # ==========================================
             # BƯỚC 5, 6, 7 & 8: SINGLE-PASS MASTER RENDER (GỘP TẤT CẢ TRONG 1 LẦN RENDER DUY NHẤT)
             # ==========================================
@@ -321,9 +385,20 @@ class DouyinAutoPipeline:
             sub_status_str = f"BẬT ({sub_count} câu)" if getattr(self.config, "enable_subtitles", True) else "TẮT"
             notify(6, "Bước Cuối: Master Render 1-Pass", f"Đang render (Làm mờ: {blur_status_str} | Phụ đề: {sub_status_str} | Tốc độ {getattr(self.config, 'final_speed', 1.2):.2f}x)...")
             console.print(f"[bold cyan]▶ BƯỚC CUỐI: Single-Pass Master Render (Làm mờ: {blur_status_str} | Phụ đề: {sub_status_str} | Lồng tiếng CapCut & Audio gốc)...[/bold cyan]")
-            final_video = self.compositor.render_single_pass_master(
+            render_srt = (self._select_render_subtitles(synced_vietnamese_srt, raw_vietnamese_srt)
+                          if self.config.enable_subtitles else synced_vietnamese_srt)
+            render_key = ["independent-subtitles-v2", file_stamp(raw_video), file_stamp(tts_synced_audio),
+                          file_stamp(bgm_track_path) if bgm_track_path else None,
+                          signature(render_srt.read_text(encoding="utf-8")) if self.config.enable_subtitles else None,
+                          asdict(self.config.blur_region), asdict(self.config.subtitle_style),
+                          self.config.enable_subtitles, self.config.final_speed,
+                          self.config.speed_factor, self.config.export_resolution,
+                          self.config.video_crf, self.config.video_preset,
+                          self.config.bgm_volume, self.config.tts_volume,
+                          str(final_output_video.resolve())]
+            final_video = self._stage(state, "render", render_key, lambda: [self.compositor.render_single_pass_master(
                 raw_video_path=raw_video,
-                srt_file=synced_vietnamese_srt if synced_vietnamese_srt.exists() else raw_vietnamese_srt,
+                srt_file=render_srt,
                 tts_audio_path=tts_synced_audio,
                 bgm_audio_path=bgm_track_path,
                 output_path=final_output_video,
@@ -332,7 +407,7 @@ class DouyinAutoPipeline:
                 video_height=video_height,
                 progress_callback=lambda p, msg: notify(6, "Master Render 1-Pass", msg),
                 original_srt_file=original_srt if original_srt.exists() else None
-            )
+            )])[0]
             overall_pbar.update(3)
 
             elapsed_time = time.time() - start_time
@@ -351,6 +426,10 @@ class DouyinAutoPipeline:
 
             return final_video
 
+        except JobCancelled:
+            overall_pbar.close()
+            logger.info("Đã hủy; giữ lại checkpoint của các bước hoàn tất.")
+            raise
         except Exception as e:
             overall_pbar.close()
             logger.exception("Có lỗi nghiêm trọng trong quy trình xử lý:")

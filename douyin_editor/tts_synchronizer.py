@@ -23,6 +23,7 @@ from tqdm import tqdm
 
 from config import PipelineConfig, TTSConfig, VOICE_PRESETS, get_voice_preset
 from transcriber import SubtitleItem
+from job_state import JobCancelled, check_cancelled, signature
 
 from concurrent.futures import ThreadPoolExecutor
 from requests.adapters import HTTPAdapter
@@ -35,6 +36,10 @@ except Exception:
     pass
 
 logger = logging.getLogger(__name__)
+
+
+class TTSTimingError(RuntimeError):
+    """A phrase cannot fit its slot without excessive speech acceleration."""
 
 
 def format_timestamp(seconds: float) -> str:
@@ -60,6 +65,7 @@ class CapCutTTSEngine:
     """
 
     def __init__(self):
+        self.cancel_event = None
         from capcut_tts_api import CapCutClient
         self.client = CapCutClient()
         self.session = requests.Session()
@@ -85,6 +91,7 @@ class CapCutTTSEngine:
         """
         if not texts:
             return []
+        check_cancelled(self.cancel_event)
 
         final_voice = voice
         final_res_id = resource_id
@@ -95,6 +102,7 @@ class CapCutTTSEngine:
                 break
 
         for attempt in range(1, max_retries + 1):
+            check_cancelled(self.cancel_event)
             try:
                 url, headers, body = self.client.build_tts_new_request(
                     texts=texts,
@@ -118,6 +126,7 @@ class CapCutTTSEngine:
                 payload_data = None
                 for poll_i in range(35):
                     time.sleep(0.35)
+                    check_cancelled(self.cancel_event)
                     q_url, q_headers, q_body = self.client.build_query_request(
                         task_id, task_token, "sami_text_to_speech"
                     )
@@ -140,6 +149,7 @@ class CapCutTTSEngine:
                 sub_list = payload_data.get("audio_subtitles", [])
 
                 def _fetch_single_audio(item_tuple):
+                    check_cancelled(self.cancel_event)
                     idx, sub = item_tuple
                     t_text = sub.get("text", texts[idx] if idx < len(texts) else "")
                     audio_url = sub.get("speech_url")
@@ -148,6 +158,7 @@ class CapCutTTSEngine:
                     audio_bytes = None
                     if audio_url:
                         for dl_attempt in range(1, 4):
+                            check_cancelled(self.cancel_event)
                             try:
                                 audio_resp = self.session.get(audio_url, timeout=(5, 25))
                                 if audio_resp.status_code == 200 and len(audio_resp.content) > 0:
@@ -170,6 +181,8 @@ class CapCutTTSEngine:
 
                 return results
 
+            except JobCancelled:
+                raise
             except Exception as e:
                 logger.warning(f"Lần thử {attempt}/{max_retries} sinh CapCut TTS thất bại: {e}")
                 if attempt == max_retries:
@@ -196,6 +209,7 @@ class VietnameseTTSSynchronizer:
         self.config = config
         self.tts_config: TTSConfig = config.tts_config
         self.engine = create_tts_engine(self.tts_config.voice)
+        self.cancel_event = None
 
     @staticmethod
     def _clean_text(text: str) -> str:
@@ -324,7 +338,9 @@ class VietnameseTTSSynchronizer:
         output_audio_path = Path(output_audio_path).resolve()
         output_audio_path.parent.mkdir(parents=True, exist_ok=True)
 
-        total_ms = int(total_duration_seconds * 1000) + 3000
+        check_cancelled(self.cancel_event)
+        self.engine.cancel_event = self.cancel_event
+        total_ms = int(total_duration_seconds * 1000)
         logger.info(f"[Bước 4] Đang sinh giọng đọc CapCut ({self.tts_config.voice}) nói trọn vẹn từng câu...")
 
         master_track = AudioSegment.silent(duration=total_ms)
@@ -339,92 +355,130 @@ class VietnameseTTSSynchronizer:
                 valid_items.append((idx, item, cleaned))
 
         if not valid_items:
-            logger.warning("Không có câu phụ đề hợp lệ nào để lồng tiếng!")
-            master_track[: int(total_duration_seconds * 1000)].export(str(output_audio_path), format="wav")
-            return output_audio_path, []
+            raise RuntimeError("Không có câu phụ đề hợp lệ để lồng tiếng. Hãy kiểm tra bản dịch.")
 
         # 2. Gửi từng batch câu hoàn chỉnh đến CapCut TTS để sinh giọng nói tự nhiên, mượt mà
         # 2. Gửi batch câu (lên tới 40 câu/lần) đến CapCut TTS để sinh giọng nói siêu tốc
         batch_size = 40
         audio_dict: Dict[int, AudioSegment] = {}
-        all_texts = [text for _, _, text in valid_items]
+        cache_dir = output_audio_path.parent / "tts_phrases"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        model_signature = (self.engine._model_signature()
+                           if get_voice_preset(self.tts_config.voice).get("provider") == "openvoice" else None)
 
-        batches = [valid_items[i : i + batch_size] for i in range(0, len(valid_items), batch_size)]
+        def cache_path(text):
+            return cache_dir / (signature(["tts-v2", text, self.tts_config.voice,
+                                          self.tts_config.resource_id, self.tts_config.rate,
+                                          model_signature]) + ".wav")
+
+        def accept_results(b_items, results):
+            # Text identity prevents a partial/reordered provider response shifting audio.
+            identity = lambda text: re.sub(r"[\W_]+", "", text.casefold())
+            by_text = {identity(text): data for text, data, _ in results if data}
+            for orig_idx, _, text in b_items:
+                data = by_text.get(identity(text))
+                if not data:
+                    continue
+                try:
+                    seg = AudioSegment.from_file(io.BytesIO(data))
+                    if len(seg) <= 0:
+                        continue
+                    temporary = cache_path(text).with_suffix(".tmp")
+                    with temporary.open("wb") as stream:
+                        seg.export(stream, format="wav")
+                    temporary.replace(cache_path(text))
+                    audio_dict[orig_idx] = seg
+                except Exception as error:
+                    logger.warning("Không đọc được audio câu %s: %s", orig_idx + 1, str(error)[-250:])
+
+        pending = []
+        for orig_idx, item, text in valid_items:
+            check_cancelled(self.cancel_event)
+            try:
+                seg = AudioSegment.from_file(io.BytesIO(cache_path(text).read_bytes()), format="wav")
+                if len(seg) <= 0:
+                    raise ValueError("Empty cached phrase")
+                audio_dict[orig_idx] = seg
+            except Exception:
+                pending.append((orig_idx, item, text))
+        batches = [pending[i:i + batch_size] for i in range(0, len(pending), batch_size)]
 
         def _synthesize_batch_worker(batch_data):
+            check_cancelled(self.cancel_event)
             b_items = batch_data
             b_texts = [text for _, _, text in b_items]
-            results = self.engine.synthesize_phrases(
-                texts=b_texts,
-                voice=self.tts_config.voice,
-                resource_id=getattr(self.tts_config, "resource_id", "7102355709945188865"),
-                rate=getattr(self.tts_config, "rate", "1.0")
-            )
+            try:
+                results = self.engine.synthesize_phrases(
+                    texts=b_texts, voice=self.tts_config.voice,
+                    resource_id=self.tts_config.resource_id, rate=self.tts_config.rate,
+                    max_retries=1)
+            except JobCancelled:
+                raise
+            except Exception as error:
+                logger.warning("TTS batch lỗi, sẽ thử lại từng câu: %s", error)
+                results = []
+            check_cancelled(self.cancel_event)
             return b_items, results
 
         with tqdm(total=len(valid_items), desc="[Bước 4.1] CapCut TTS Sinh Giọng Đầy Đủ Câu", leave=False) as pbar:
-            if len(batches) <= 1:
-                for b_items, batch_results in [_synthesize_batch_worker(batches[0])]:
-                    for (p_text, a_bytes, dur_ms), (orig_idx, _, _) in zip(batch_results, b_items):
-                        if a_bytes:
-                            try:
-                                seg = AudioSegment.from_file(io.BytesIO(a_bytes))
-                                audio_dict[orig_idx] = seg
-                            except Exception as e:
-                                logger.warning(f"Lỗi nạp audio segment cho '{p_text}': {e}")
-                        pbar.update(1)
-            else:
+            if batches:
                 with ThreadPoolExecutor(max_workers=min(3, len(batches))) as pool:
-                    for b_items, batch_results in pool.map(_synthesize_batch_worker, batches):
-                        for (p_text, a_bytes, dur_ms), (orig_idx, _, _) in zip(batch_results, b_items):
-                            if a_bytes:
-                                try:
-                                    seg = AudioSegment.from_file(io.BytesIO(a_bytes))
-                                    audio_dict[orig_idx] = seg
-                                except Exception as e:
-                                    logger.warning(f"Lỗi nạp audio segment cho '{p_text}': {e}")
-                            pbar.update(1)
+                    for b_items, results in pool.map(_synthesize_batch_worker, batches):
+                        accept_results(b_items, results)
+                        pbar.update(len(b_items))
+            for _ in range(2):
+                missing = [item for item in valid_items if item[0] not in audio_dict]
+                if not missing:
+                    break
+                for item in missing:
+                    b_items, results = _synthesize_batch_worker([item])
+                    accept_results(b_items, results)
+            missing = [str(item.index) for idx, item, _ in valid_items if idx not in audio_dict]
+            if missing:
+                raise RuntimeError("TTS thất bại ở câu: " + ", ".join(missing) +
+                                   ". Chạy lại để thử các câu lỗi; audio thành công đã được lưu.")
 
         # 3. Đồng bộ hóa Audio vào Master Track đảm bảo NÓI TRỌN VẸN HẾT CÂU
         synced_subtitles: List[SubtitleItem] = []
         global_sub_idx = 1
-        last_audio_end_ms = 0
 
         with tqdm(total=len(valid_items), desc="[Bước 4.2] Căn Chỉnh Khớp Timeline Tự Nhiên", leave=False) as pbar:
             for i, (orig_idx, orig_item, clean_text) in enumerate(valid_items):
-                if orig_idx not in audio_dict:
-                    pbar.update(1)
-                    continue
+                check_cancelled(self.cancel_event)
 
                 audio_seg = audio_dict[orig_idx]
                 seg_len_ms = len(audio_seg)
 
                 orig_start_ms = int(orig_item.start_seconds * 1000)
-                orig_end_ms = int(orig_item.end_seconds * 1000)
 
                 # Xác định thời điểm bắt đầu: không được đè lên câu trước
-                target_start_ms = max(orig_start_ms, last_audio_end_ms)
+                target_start_ms = orig_start_ms
 
                 # Tính slot thời gian cho phép đến câu tiếp theo
                 if i + 1 < len(valid_items):
                     next_orig_start_ms = int(valid_items[i + 1][1].start_seconds * 1000)
-                    available_slot_ms = max(next_orig_start_ms - target_start_ms, orig_end_ms - target_start_ms)
+                    available_slot_ms = min(next_orig_start_ms, total_ms) - target_start_ms
                 else:
-                    available_slot_ms = max(int(total_duration_seconds * 1000) - target_start_ms, orig_end_ms - target_start_ms)
+                    available_slot_ms = total_ms - target_start_ms
+                if target_start_ms < 0 or available_slot_ms <= 0:
+                    raise TTSTimingError(f"Câu {orig_item.index} có mốc thời gian không hợp lệ.")
 
                 # Nếu audio dài hơn khoảng thời gian cho phép, tăng tốc nhẹ bằng atempo (giữ pitch) để vừa vặn
-                if seg_len_ms > available_slot_ms > 400:
-                    speed_ratio = min(seg_len_ms / max(available_slot_ms - 50, 400), 1.25)
-                    if speed_ratio > 1.03:
-                        audio_seg = self._speed_change_ffmpeg(audio_seg, speed_ratio)
-                        seg_len_ms = len(audio_seg)
+                if seg_len_ms > available_slot_ms:
+                    speed_ratio = min(seg_len_ms / max(available_slot_ms - 30, 1), 1.25)
+                    audio_seg = self._speed_change_ffmpeg(audio_seg, speed_ratio)
+                    seg_len_ms = len(audio_seg)
+                if seg_len_ms > available_slot_ms:
+                    raise TTSTimingError(
+                        f"Câu {orig_item.index} đọc dài {seg_len_ms / 1000:.2f}s nhưng chỉ có "
+                        f"{available_slot_ms / 1000:.2f}s: {orig_item.text}\n"
+                        "Hãy rút gọn câu này trong bản dịch rồi chạy lại. Audio đã tạo được giữ lại.")
 
                 # Đặt audio vào master track
                 master_track = master_track.overlay(audio_seg, position=target_start_ms)
 
                 actual_start_sec = target_start_ms / 1000.0
                 actual_end_sec = (target_start_ms + seg_len_ms) / 1000.0
-                last_audio_end_ms = target_start_ms + seg_len_ms + 60  # Nghỉ 60ms tự nhiên giữa các câu
 
                 # Tạo phụ đề hiển thị khớp với thời gian đọc câu này
                 synced_subtitles.append(
@@ -442,9 +496,12 @@ class VietnameseTTSSynchronizer:
 
         # 4. Xuất file âm thanh TTS hoàn chỉnh
         # Đảm bảo độ dài bao phủ toàn bộ video mà không làm cụt câu cuối
-        final_track_duration_ms = max(int(total_duration_seconds * 1000), last_audio_end_ms)
-        final_audio = master_track[:final_track_duration_ms]
-        final_audio.export(str(output_audio_path), format="wav")
+        check_cancelled(self.cancel_event)
+        final_audio = master_track[:total_ms]
+        temporary_audio = output_audio_path.with_suffix(".tmp")
+        with temporary_audio.open("wb") as stream:
+            final_audio.export(stream, format="wav")
+        temporary_audio.replace(output_audio_path)
         logger.info(f"Đã tạo audio CapCut TTS hoàn chỉnh: {output_audio_path}")
 
         # 5. Xuất file SRT phụ đề đã đồng bộ

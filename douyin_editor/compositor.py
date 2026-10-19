@@ -26,6 +26,7 @@ class VideoCompositor:
 
     def __init__(self, config: PipelineConfig):
         self.config = config
+        self.cancel_event = None
 
     @staticmethod
     def _escape_ffmpeg_path(path: Path) -> str:
@@ -269,7 +270,16 @@ class VideoCompositor:
 
         has_bgm = bgm_audio_path is not None and Path(bgm_audio_path).exists()
         enable_subs = bool(getattr(self.config, "enable_subtitles", True))
-        has_subtitles = enable_subs and srt_file.exists() and len(srt_file.read_text(encoding="utf-8").strip()) > 0
+        has_subtitles = False
+        if enable_subs:
+            from translator import parse_srt_string
+            try:
+                items = parse_srt_string(srt_file.read_text(encoding="utf-8-sig"))
+            except (OSError, UnicodeError) as error:
+                raise RuntimeError(f"Không đọc được phụ đề đang bật: {srt_file}") from error
+            if not items or any(not s.text.strip() or s.end_seconds <= s.start_seconds or s.start_seconds < 0 for s in items):
+                raise RuntimeError(f"Đã bật phụ đề nhưng file SRT rỗng hoặc không hợp lệ: {srt_file}")
+            has_subtitles = True
 
         final_speed = float(getattr(self.config, "final_speed", 1.20))
         if final_speed <= 0:
@@ -324,19 +334,17 @@ class VideoCompositor:
         if should_apply_blur:
             v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS{scale_filter},format=yuv420p,split=2[v_speed][v_crop];")
             v_filter_parts.append(f"[v_crop]crop={w}:{h}:{x}:{y},boxblur={safe_power}:5[v_blurred];")
-            if has_subtitles:
-                escaped_srt = self._escape_ffmpeg_path(burn_srt_file)
-                force_style = self.build_force_style_string(target_w, target_h, video_width, video_height)
-                v_filter_parts.append(f"[v_speed][v_blurred]overlay={x}:{y}{overlay_enable_clause},subtitles='{escaped_srt}':force_style='{force_style}'[v_out]")
-            else:
-                v_filter_parts.append(f"[v_speed][v_blurred]overlay={x}:{y}{overlay_enable_clause}[v_out]")
+            v_filter_parts.append(f"[v_speed][v_blurred]overlay={x}:{y}{overlay_enable_clause}[v_base]")
         else:
-            if has_subtitles:
-                escaped_srt = self._escape_ffmpeg_path(burn_srt_file)
-                force_style = self.build_force_style_string(target_w, target_h, video_width, video_height)
-                v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS{scale_filter},format=yuv420p,subtitles='{escaped_srt}':force_style='{force_style}'[v_out]")
-            else:
-                v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS{scale_filter},format=yuv420p[v_out]")
+            v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS{scale_filter},format=yuv420p[v_base]")
+
+        # Caption visibility is independent of blur and applied after video effects.
+        if has_subtitles:
+            escaped_srt = self._escape_ffmpeg_path(burn_srt_file)
+            force_style = self.build_force_style_string(target_w, target_h, video_width, video_height)
+            v_filter_parts.append(f";[v_base]subtitles='{escaped_srt}':force_style='{force_style}'[v_out]")
+        else:
+            v_filter_parts.append(";[v_base]null[v_out]")
 
 
         v_filter_str = "".join(v_filter_parts)
@@ -401,7 +409,8 @@ class VideoCompositor:
             cmd=cmd,
             total_duration_sec=real_target_duration,
             desc=f"[Bước 8] Render Master Video ({final_speed}x)",
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
+            cancel_event=self.cancel_event
         )
 
         logger.info(f"Đã xuất bản video master 1-Pass thành công: {output_path}")

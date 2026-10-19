@@ -38,9 +38,11 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--source-language", choices=["zh", "en"], default="zh", help="Ngon ngu goc: zh (Trung), en (Anh).")
     parser.add_argument("--target-language", choices=["vi", "ja"], default=None, help="Ngon ngu dich: vi (Viet), ja (Nhat); mac dinh theo giong doc.")
     parser.add_argument("--provider", type=str, default="deepseek", choices=["deepseek", "gemini"], help="AI Provider dich thuat (deepseek hoac gemini).")
-    parser.add_argument("-k", "--deepseek-key", type=str, default=os.getenv("DEEPSEEK_API_KEY", "sk-7731fa779b8a46fda7e9e48c46bce715"), help="API Key DeepSeek.")
+    parser.add_argument("-k", "--deepseek-key", type=str, default=os.getenv("DEEPSEEK_API_KEY", ""), help="API Key DeepSeek.")
     parser.add_argument("-m", "--deepseek-model", type=str, default="deepseek-v4-flash", help="Model DeepSeek (mac dinh: deepseek-v4-flash).")
     parser.add_argument("--gui", action="store_true", help="Khoi chay giao dien do hoa (GUI).")
+    parser.add_argument("--no-resume", action="store_true", help="Chay lai cac buoc thay vi dung checkpoint.")
+    parser.add_argument("--review", action="store_true", help="Dung de sua file SRT truoc khi tao giong.")
     parser.add_argument("--cookie-str", type=str, help="Chuoi cookie Douyin.")
     parser.add_argument("--cookie-file", type=str, help="Duong dan file cookies.txt.")
     parser.add_argument("--browser", type=str, choices=["edge", "chrome", "brave", "firefox"], help="Lay cookie truc tiep tu trinh duyet.")
@@ -153,6 +155,7 @@ def main():
     audio_mode = "mute_original" if args.no_bgm else args.audio_mode
 
     config = PipelineConfig(
+        resume=not args.no_resume,
         llm_provider="deepseek",
         deepseek_api_key=deepseek_key,
         deepseek_model_name=args.deepseek_model,
@@ -219,8 +222,12 @@ def main():
             raise ValueError("Giong Nhat can ngon ngu dich ja; bo --target-language vi.")
 
     pipeline = DouyinAutoPipeline(config=config)
+    def review_translation(directory, path):
+        console.print(f"Sửa nội dung bản dịch tại: {path.resolve()}")
+        console.print("Giữ nguyên số câu và mốc thời gian. Lưu file trước khi tiếp tục.")
+        input("Nhấn Enter để tạo giọng, hoặc Ctrl+C để dừng: ")
     try:
-        final_video_path = pipeline.run(url)
+        final_video_path = pipeline.run(url, review_subtitles_callback=review_translation if args.review else None)
         console.print(f"\n[bold green]✨ Video đã được lưu tại:[/bold green] [underline]{final_video_path}[/underline]\n")
     except Exception as e:
         console.print(f"\n[bold red]Quy trình kết thúc với lỗi: {e}[/bold red]")

@@ -222,6 +222,7 @@ class WhisperTranscriber:
 
     def __init__(self, config: PipelineConfig):
         self.config = config
+        self.cancel_event = None
         self.model_size = getattr(config, "whisper_model_size", "small")
         self.language = getattr(config, "whisper_language", "zh")
         self._whisper_module = None
@@ -488,8 +489,11 @@ class WhisperTranscriber:
         lang_code = "zh-CN" if self.language.lower().startswith("zh") else self.language
 
         def transcribe_segment(item: Tuple[int, float, float]) -> Tuple[int, float, float, str]:
+            from job_state import check_cancelled
+            check_cancelled(self.cancel_event)
             idx, st, en = item
             r = sr.Recognizer()
+            r.operation_timeout = 30
             try:
                 start_byte = int(st * sample_rate) * sample_width
                 end_byte = min(len(raw_pcm), int(en * sample_rate) * sample_width)
@@ -591,6 +595,8 @@ class WhisperTranscriber:
 
     def transcribe(self, audio_path: Path, output_srt: Path) -> List[SubtitleItem]:
         """Nhận diện giọng nói từ file audio và lưu ra file SRT"""
+        from job_state import check_cancelled
+        check_cancelled(self.cancel_event)
         audio_path = Path(audio_path).resolve()
         output_srt = Path(output_srt).resolve()
         output_srt.parent.mkdir(parents=True, exist_ok=True)
@@ -609,6 +615,7 @@ class WhisperTranscriber:
             items = []
 
         # 2. Local Whisper nếu có module openai-whisper
+        check_cancelled(self.cancel_event)
         if not items and self._is_local_whisper_available():
             logger.info("Phát hiện thư viện Whisper cục bộ. Đang chạy Local Whisper STT...")
             try:
@@ -618,6 +625,7 @@ class WhisperTranscriber:
                 items = []
 
         # 3. Gemini Audio STT nếu có key
+        check_cancelled(self.cancel_event)
         if not items and getattr(self.config, "gemini_api_key", None):
             try:
                 items = self._transcribe_with_gemini_audio(audio_path)

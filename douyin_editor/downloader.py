@@ -17,6 +17,7 @@ from tqdm import tqdm
 import yt_dlp
 
 from config import CookieConfig
+from job_state import JobCancelled, check_cancelled
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class DouyinDownloader:
     """
 
     def __init__(self, download_dir: Path = Path("downloads"), cookie_config: Optional[CookieConfig] = None):
+        self.cancel_event = None
         self.download_dir = Path(download_dir)
         self.download_dir.mkdir(parents=True, exist_ok=True)
         self.cookie_config = cookie_config or CookieConfig()
@@ -132,6 +134,7 @@ class DouyinDownloader:
             raise ValueError("Vui lòng dùng link một video YouTube (watch, youtu.be hoặc Shorts), không dùng link kênh/playlist.")
 
         def report(status):
+            check_cancelled(self.cancel_event)
             if not progress_callback:
                 return
             total = status.get("total_bytes") or status.get("total_bytes_estimate") or 0
@@ -184,6 +187,7 @@ class DouyinDownloader:
                         return candidate.resolve()
                 raise RuntimeError("Không tìm thấy file video sau khi tải và ghép luồng.")
         except yt_dlp.utils.DownloadError as exc:
+            check_cancelled(self.cancel_event)
             raise RuntimeError(f"Không thể tải YouTube: {exc}\nKiểm tra liên kết, cập nhật yt-dlp hoặc chọn file cookie/trình duyệt nếu video cần đăng nhập.") from exc
 
     def resolve_redirect_url(self, short_url: str) -> str:
@@ -316,6 +320,7 @@ class DouyinDownloader:
                             leave=False
                         ) as pbar:
                             for chunk in v_resp.iter_content(chunk_size=128 * 1024):
+                                check_cancelled(self.cancel_event)
                                 if chunk:
                                     f.write(chunk)
                                     downloaded_size += len(chunk)
@@ -327,6 +332,8 @@ class DouyinDownloader:
                     if output_path.exists() and output_path.stat().st_size > 1000:
                         logger.info(f"Tải video thành công qua Official Douyin API [{quality_info}]: {output_path.name} ({output_path.stat().st_size//1024} KB)")
                         return True
+        except JobCancelled:
+            raise
         except Exception as e:
             logger.warning(f"Tải qua Official Douyin API không thành công: {e}")
         return False
@@ -358,6 +365,7 @@ class DouyinDownloader:
                                 leave=False
                             ) as pbar:
                                 for chunk in v_resp.iter_content(chunk_size=128 * 1024):
+                                    check_cancelled(self.cancel_event)
                                     if chunk:
                                         f.write(chunk)
                                         downloaded_size += len(chunk)
@@ -369,6 +377,8 @@ class DouyinDownloader:
                         if output_path.exists() and output_path.stat().st_size > 1000:
                             logger.info(f"Tải video thành công qua Direct API: {output_path.name}")
                             return True
+        except JobCancelled:
+            raise
         except Exception as e:
             logger.warning(f"Tải qua Direct API không thành công: {e}")
         return False
@@ -379,6 +389,7 @@ class DouyinDownloader:
         """
         temp_cookie_file = None
         ydl_opts = {
+            "progress_hooks": [lambda _: check_cancelled(self.cancel_event)],
             "outtmpl": out_template,
             "format": "bestvideo+bestaudio/best",
             "merge_output_format": "mp4",
@@ -440,6 +451,7 @@ class DouyinDownloader:
         Hoàn toàn tự động giải quyết lỗi 'Fresh cookies needed' của Douyin.
         """
         clean_url = self.extract_url(url_or_text)
+        check_cancelled(self.cancel_event)
         if not clean_url.startswith("http"):
             raise ValueError(f"URL không hợp lệ: {url_or_text}")
 
@@ -447,6 +459,7 @@ class DouyinDownloader:
             return self._download_youtube(clean_url, custom_filename, progress_callback)
 
         resolved_url = self.resolve_redirect_url(clean_url)
+        check_cancelled(self.cancel_event)
         video_id = self.extract_video_id(resolved_url) or self.extract_video_id(clean_url)
         
         file_base_name = custom_filename or f"douyin_{video_id or str(int(time.time()))}"
@@ -467,7 +480,10 @@ class DouyinDownloader:
             if downloaded and downloaded.exists():
                 logger.info(f"Tải thành công qua yt-dlp: {downloaded.name}")
                 return downloaded
+        except JobCancelled:
+            raise
         except Exception as e:
+            check_cancelled(self.cancel_event)
             logger.warning(f"yt-dlp gặp lỗi ({e}).")
 
         # Bước 3: Thử tải qua Direct TikWM Public API

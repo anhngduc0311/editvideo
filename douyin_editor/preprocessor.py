@@ -20,11 +20,14 @@ def run_ffmpeg_with_progress(
     cmd: list,
     total_duration_sec: float,
     desc: str = "FFmpeg Processing",
-    progress_callback: Optional[Callable[[float, str], None]] = None
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+    cancel_event=None
 ) -> None:
     """
     Thực thi lệnh FFmpeg với thanh tiến trình thời gian thực (Real-time Progress Bar & FPS/Speed).
     """
+    from job_state import check_cancelled
+    check_cancelled(cancel_event)
     # Thêm -progress pipe:1 để FFmpeg in tiến trình máy đọc được qua stdout
     enhanced_cmd = []
     has_progress_flag = False
@@ -42,6 +45,7 @@ def run_ffmpeg_with_progress(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         universal_newlines=True,
+        encoding="utf-8", errors="replace",
         bufsize=1
     )
 
@@ -59,6 +63,22 @@ def run_ffmpeg_with_progress(
                 stderr_lines.pop(0)
 
     import threading
+    def watch_cancellation():
+        while proc.poll() is None:
+            if cancel_event is not None and cancel_event.wait(0.1):
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                except OSError:
+                    pass
+                return
+            if cancel_event is None:
+                return
+
+    t_cancel = threading.Thread(target=watch_cancellation, daemon=True)
+    t_cancel.start()
     t_err = threading.Thread(target=read_stderr, daemon=True)
     t_err.start()
 
@@ -97,7 +117,11 @@ def run_ffmpeg_with_progress(
 
     proc.wait()
     t_err.join(timeout=1.0)
+    t_cancel.join(timeout=0.2)
+    proc.stdout.close()
+    proc.stderr.close()
     pbar.close()
+    check_cancelled(cancel_event)
 
     if proc.returncode != 0:
         err_msg = "".join(stderr_lines)

@@ -5,5 +5,6 @@ echo ========================================================
 echo   DOUYIN VIDEO AI AUTO-EDITOR (GUI STUDIO)
 echo ========================================================
 echo.
-python app_gui.py
+cd /d "%~dp0"
+call run_gui.bat
 pause

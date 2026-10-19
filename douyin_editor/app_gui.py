@@ -21,6 +21,9 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from config import BlurRegion, CookieConfig, PipelineConfig, SubtitleStyle, SUBTITLE_PRESETS, TTSConfig, VOICE_PRESETS, TRANSLATION_TOPIC_PRESETS, TRANSLATION_MODES, get_tts_language
 from pipeline import DouyinAutoPipeline
+from job_state import JobCancelled, check_cancelled
+from credential_store import seal_secrets, open_secrets
+from subtitle_review import wait_for_translation_review
 from roi_selector import VisualROISelectorDialog
 from studio_theme import COLORS, apply_studio_theme
 from urllib.parse import urlparse
@@ -48,6 +51,7 @@ class DouyinEditorApp(ctk.CTk):
 
         self.pipeline_thread: threading.Thread = None
         self.is_running = False
+        self.cancel_event = threading.Event()
         self.last_output_video: Path = None
 
         self.saved_api_key = ""
@@ -73,16 +77,17 @@ class DouyinEditorApp(ctk.CTk):
             y_ratio=getattr(self, "saved_blur_y_ratio", 0.718),
             height_ratio=getattr(self, "saved_blur_height_ratio", 0.0694),
             blur_power=15,
-            enabled=True
+            enabled=getattr(self, "saved_blur_enabled", True)
         )
 
         self._build_ui()
         self._refresh_project_summary()
+        self.protocol("WM_DELETE_WINDOW", self._close_app)
 
     def _load_saved_settings(self):
         """Đọc cài đặt đã lưu (API Key, Cookie, Phụ đề, Vùng mờ, v.v.)"""
         self.saved_llm_provider = "deepseek"
-        self.saved_deepseek_key = os.getenv("DEEPSEEK_API_KEY", "sk-7731fa779b8a46fda7e9e48c46bce715")
+        self.saved_deepseek_key = os.getenv("DEEPSEEK_API_KEY", "")
         self.saved_deepseek_model = "deepseek-v4-flash"
         self.saved_chatgpt_cookie = os.getenv("CHATGPT_COOKIE", "")
         self.saved_chatgpt_model = "auto"
@@ -108,9 +113,13 @@ class DouyinEditorApp(ctk.CTk):
         self.saved_translation_mode = "Tiếng Trung → Tiếng Việt"
         self.saved_voice = VOICE_PRESETS["co_gai_hoat_ngon"]["name"]
         self.saved_enable_subtitles = True
+        self.saved_review_translation = True
+        self.saved_resume = True
         if CONFIG_FILE.exists():
             try:
                 data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+                # Read legacy settings once; the next save migrates secrets to DPAPI.
+                data.update(open_secrets(data.get("protected_credentials")))
                 self.saved_llm_provider = data.get("llm_provider", "deepseek")
                 self.saved_deepseek_key = data.get("deepseek_api_key", self.saved_deepseek_key)
                 self.saved_deepseek_model = data.get("deepseek_model_name", "deepseek-v4-flash")
@@ -130,6 +139,8 @@ class DouyinEditorApp(ctk.CTk):
                 self.saved_translation_mode = data.get("translation_mode", self.saved_translation_mode)
                 self.saved_voice = data.get("voice_preset", self.saved_voice)
                 self.saved_enable_subtitles = data.get("enable_subtitles", True)
+                self.saved_review_translation = data.get("review_translation", True)
+                self.saved_resume = data.get("resume", True)
                 self.saved_blur_x = data.get("blur_x", 293)
                 self.saved_blur_y = data.get("blur_y", 517)
                 self.saved_blur_w = data.get("blur_w", 683)
@@ -143,6 +154,8 @@ class DouyinEditorApp(ctk.CTk):
                 self.saved_bgm_volume = float(data.get("bgm_volume", 1.00))
             except Exception:
                 pass
+        self.saved_deepseek_key = os.getenv("DEEPSEEK_API_KEY") or self.saved_deepseek_key
+        self.saved_chatgpt_cookie = os.getenv("CHATGPT_COOKIE") or self.saved_chatgpt_cookie
 
     def _save_settings(self):
         """Lưu cài đặt vào file JSON trong thư mục User"""
@@ -190,6 +203,8 @@ class DouyinEditorApp(ctk.CTk):
                 "translation_mode": self.cmb_translation_mode.get() if hasattr(self, "cmb_translation_mode") else self.saved_translation_mode,
                 "voice_preset": self.cmb_voice.get() if hasattr(self, "cmb_voice") else self.saved_voice,
                 "enable_subtitles": enable_subs_val,
+                "review_translation": bool(self.chk_review_translation.get()) if hasattr(self, "chk_review_translation") else self.saved_review_translation,
+                "resume": bool(self.chk_resume.get()) if hasattr(self, "chk_resume") else self.saved_resume,
                 "blur_x": bx,
                 "blur_y": by,
                 "blur_w": bw,
@@ -202,10 +217,16 @@ class DouyinEditorApp(ctk.CTk):
                 "original_audio_volume": audio_vol_val if "Giữ" in audio_mode_val else getattr(self, "saved_original_audio_volume", 0.60),
                 "bgm_volume": audio_vol_val if "Tách" in audio_mode_val else getattr(self, "saved_bgm_volume", 1.00),
             }
-            CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            secrets = {key: data.pop(key) for key in ("deepseek_api_key", "chatgpt_cookie", "douyin_cookie_str")}
+            protected = seal_secrets(secrets)
+            if protected:
+                data["protected_credentials"] = protected
+            temporary = CONFIG_FILE.with_suffix(".tmp")
+            temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            temporary.replace(CONFIG_FILE)
             self._refresh_project_summary()
         except Exception:
-            pass
+            logging.getLogger(__name__).warning("Không lưu được cài đặt; thay đổi chỉ có hiệu lực trong phiên hiện tại.")
 
     def _build_ui(self):
         self.grid_columnconfigure(0, weight=3, minsize=610)
@@ -273,6 +294,16 @@ class DouyinEditorApp(ctk.CTk):
         self.cmb_translation_mode.set(self.saved_translation_mode if self.saved_translation_mode in TRANSLATION_MODES
                                       else "Tiếng Trung → Tiếng Việt")
         self.cmb_translation_mode.pack(side="left")
+        self.chk_review_translation = ctk.CTkCheckBox(url_card, text="Duyệt bản dịch trước khi tạo giọng")
+        self.chk_review_translation.select()
+        if not self.saved_review_translation:
+            self.chk_review_translation.deselect()
+        self.chk_review_translation.pack(anchor="w", padx=12, pady=(0, 8))
+        self.chk_resume = ctk.CTkCheckBox(url_card, text="Tiếp tục các bước đã hoàn tất khi chạy lại")
+        self.chk_resume.select()
+        if not self.saved_resume:
+            self.chk_resume.deselect()
+        self.chk_resume.pack(anchor="w", padx=12, pady=(0, 10))
 
         # 2. Card Cookie Douyin
         cookie_card = ctk.CTkFrame(self.settings_pages["Kết nối"], corner_radius=14, border_width=1)
@@ -697,7 +728,7 @@ class DouyinEditorApp(ctk.CTk):
         # Checkbox Tự động dừng lại ở Bước 2 để chọn vùng mờ trên video thực tế
         self.chk_interactive_roi = ctk.CTkCheckBox(
             video_card,
-            text="⏸ Dừng lại sau khi tải để tôi khoanh vùng mờ trên video thực tế",
+            text="⏸ Dừng sau khi tải để chỉnh vùng mờ và vị trí phụ đề",
             font=ctk.CTkFont(size=12)
         )
         self.chk_interactive_roi.select()  # Mặc định bật để người dùng tự chọn
@@ -1142,6 +1173,10 @@ class DouyinEditorApp(ctk.CTk):
             command=self._start_pipeline
         )
         self.btn_run.grid(row=0, column=0, sticky="ew", padx=(12, 8), pady=10)
+        self.btn_cancel = ctk.CTkButton(footer_frame, text="Hủy", width=75, height=44,
+                                      command=self._cancel_pipeline, state="disabled",
+                                      fg_color="#B64949", hover_color="#923B3B")
+        self.btn_cancel.grid(row=0, column=3, padx=(0, 12), pady=10)
 
         self.btn_open_folder = ctk.CTkButton(
             footer_frame,
@@ -1740,7 +1775,7 @@ class DouyinEditorApp(ctk.CTk):
         if hasattr(self, "chk_smart_blur"):
             self.chk_smart_blur.configure(state=state)
         if hasattr(self, "btn_open_roi_selector"):
-            self.btn_open_roi_selector.configure(state=state)
+            self.btn_open_roi_selector.configure(state="normal")
         if hasattr(self, "btn_quick_douyin_blur"):
             self.btn_quick_douyin_blur.configure(state=state)
         if hasattr(self, "slider_blur_y"):
@@ -1748,7 +1783,8 @@ class DouyinEditorApp(ctk.CTk):
         if hasattr(self, "slider_blur_h"):
             self.slider_blur_h.configure(state=state)
         if hasattr(self, "chk_interactive_roi"):
-            self.chk_interactive_roi.configure(state=state)
+            self.chk_interactive_roi.configure(state="normal")
+        self.current_blur_region.enabled = is_blur
         self.saved_blur_enabled = is_blur
         self._save_settings()
 
@@ -1808,6 +1844,19 @@ class DouyinEditorApp(ctk.CTk):
         """Xóa trắng nội dung trong ô nhật ký"""
         self.log_textbox.delete("1.0", "end")
 
+    def _cancel_pipeline(self):
+        if self.is_running:
+            self.cancel_event.set()
+            self.btn_cancel.configure(state="disabled")
+            self.lbl_status.configure(text="Đang hủy… chờ thao tác hiện tại kết thúc.")
+
+    def _close_app(self):
+        if self.is_running:
+            self._cancel_pipeline()
+            self.after(200, self._close_app)
+            return
+        self.destroy()
+
     def _start_pipeline(self):
         if self.is_running:
             return
@@ -1840,7 +1889,7 @@ class DouyinEditorApp(ctk.CTk):
         cookie_tab = self.cookie_tabview.get()
         cookie_cfg = CookieConfig()
 
-        if cookie_tab == "Nhập chuỗi Cookie":
+        if cookie_tab == "Dán Cookie Text":
             c_text = self.cookie_textbox.get("1.0", "end").strip()
             if c_text:
                 cookie_cfg.cookie_str = c_text
@@ -1954,6 +2003,7 @@ class DouyinEditorApp(ctk.CTk):
 
         source_language, target_language = TRANSLATION_MODES[self.cmb_translation_mode.get()]
         config = PipelineConfig(
+            resume=bool(self.chk_resume.get()),
             whisper_language=source_language,
             target_language=target_language,
             llm_provider=llm_provider,
@@ -1984,6 +2034,9 @@ class DouyinEditorApp(ctk.CTk):
         )
 
         self.is_running = True
+        self.cancel_event.clear()
+        self.btn_cancel.configure(state="normal")
+        review_enabled = bool(self.chk_review_translation.get())
         self.btn_run.configure(text="Đang xử lý video…", state="disabled", fg_color="#6b7280")
         self.btn_play_video.configure(state="disabled")
         self.progress_bar.set(0.0)
@@ -2068,9 +2121,20 @@ class DouyinEditorApp(ctk.CTk):
                 )
                 # Nếu người dùng đóng cửa sổ mà không bấm Lưu -> dùng cấu hình hiện tại
                 dlg.protocol("WM_DELETE_WINDOW", lambda: (event.set(), dlg.destroy()))
+                def poll_cancel():
+                    if not dlg.winfo_exists():
+                        return
+                    if self.cancel_event.is_set():
+                        event.set()
+                        dlg.destroy()
+                    else:
+                        dlg.after(200, poll_cancel)
+                dlg.after(200, poll_cancel)
 
             self.after(0, open_dialog)
-            event.wait()
+            while not event.wait(0.1):
+                check_cancelled(self.cancel_event)
+            check_cancelled(self.cancel_event)
             return chosen_container["region"], chosen_container["sub_style"], chosen_container["enable_subtitles"]
 
         def worker():
@@ -2080,21 +2144,34 @@ class DouyinEditorApp(ctk.CTk):
                     douyin_url_or_text=raw_url,
                     progress_callback=self._update_step_status,
                     interactive_roi_callback=interactive_roi_hook if is_interactive_roi else None,
+                    review_subtitles_callback=(lambda directory, path: wait_for_translation_review(
+                        self, directory, path, self.cancel_event)) if review_enabled else None,
+                    cancel_event=self.cancel_event,
                 )
                 self.last_output_video = final_video
 
                 def on_success():
                     self.is_running = False
+                    self.btn_cancel.configure(state="disabled")
                     self.btn_run.configure(text="Bắt đầu xử lý  →", state="normal", fg_color="#528BFF")
                     self.btn_play_video.configure(state="normal")
                     messagebox.showinfo("Thành công", f"Đã edit và dịch video thành công!\n\nFile lưu tại: {final_video.name}")
 
                 self.after(0, on_success)
 
+            except JobCancelled:
+                def on_cancel():
+                    self.is_running = False
+                    self.btn_cancel.configure(state="disabled")
+                    self.btn_run.configure(text="Tiếp tục xử lý  →", state="normal", fg_color="#528BFF")
+                    self.lbl_status.configure(text="Đã hủy. Bấm tiếp tục để dùng lại các bước hoàn tất.")
+                    self._append_log("Đã hủy; dữ liệu hoàn tất được giữ lại.", "WARNING")
+                self.after(0, on_cancel)
             except Exception as e:
                 err_msg = str(e)
                 def on_error(err=err_msg):
                     self.is_running = False
+                    self.btn_cancel.configure(state="disabled")
                     self.btn_run.configure(text="Bắt đầu xử lý  →", state="normal", fg_color="#528BFF")
                     messagebox.showerror("Lỗi xử lý", f"Đã xảy ra lỗi trong quá trình thực hiện:\n\n{err}")
 

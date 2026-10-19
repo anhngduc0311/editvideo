@@ -29,6 +29,8 @@ torchaudio>=2.0.0
 # UI, Logging & Progress Bars
 tqdm>=4.66.5
 rich>=13.8.0
+customtkinter>=6.0.0,<7
+Pillow>=10.0
 
 # Japanese male reference voice (OpenVoice V2, local assets in ../tts/)
 edge-tts>=7.0
