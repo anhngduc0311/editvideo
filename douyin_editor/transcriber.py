@@ -301,11 +301,7 @@ class WhisperTranscriber:
                 check=True
             )
             audio_b64 = base64.b64encode(chunk_proc.stdout).decode("utf-8")
-            prompt = (
-                "Nghe đoạn âm thanh tiếng Trung ngắn này và xuất ra phụ đề chuẩn định dạng SRT:\n"
-                "- Giữ nguyên tiếng Trung.\n"
-                "- Chỉ trả về nội dung SRT, không thêm lời giải thích."
-            )
+            prompt = self._gemini_transcription_prompt()
 
             for model in unique_models:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
@@ -370,6 +366,14 @@ class WhisperTranscriber:
         for i, item in enumerate(all_items, 1):
             item.index = i
         return all_items
+
+    def _gemini_transcription_prompt(self) -> str:
+        language = {"en": "tiếng Anh", "zh": "tiếng Trung"}.get(self.language, self.language)
+        return (
+            f"Nghe đoạn âm thanh {language} ngắn này và xuất ra phụ đề chuẩn định dạng SRT:\n"
+            f"- Giữ nguyên {language}, không dịch.\n"
+            "- Chỉ trả về nội dung SRT, không thêm lời giải thích."
+        )
 
     def transcribe(self, audio_path: Path, output_srt: Path) -> List[SubtitleItem]:
         """Nhận diện giọng nói từ file audio và lưu ra file SRT"""

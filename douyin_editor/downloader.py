@@ -7,9 +7,11 @@ import logging
 import os
 from pathlib import Path
 import re
+import shutil
 import tempfile
 import time
 from typing import Callable, Optional
+from urllib.parse import parse_qs, urlparse
 import requests
 from tqdm import tqdm
 import yt_dlp
@@ -105,6 +107,78 @@ class DouyinDownloader:
         if match:
             return match.group(0)
         return raw_input.strip()
+
+    @staticmethod
+    def detect_source(url: str) -> str:
+        host = (urlparse(url).hostname or "").lower()
+        for domain, source in (("youtube.com", "youtube"), ("youtu.be", "youtube"),
+                               ("youtube-nocookie.com", "youtube"), ("douyin.com", "douyin")):
+            if host == domain or host.endswith("." + domain):
+                return source
+        raise ValueError("Chỉ hỗ trợ liên kết video Douyin hoặc YouTube.")
+
+    def _download_youtube(self, url: str, custom_filename=None, progress_callback=None) -> Path:
+        """Download one YouTube video without invoking Douyin APIs or cookies."""
+        parsed = urlparse(url)
+        parts = parsed.path.strip("/").split("/")
+        host = (parsed.hostname or "").lower()
+        if host == "youtu.be" or host.endswith(".youtu.be"):
+            video_id = parts[0]
+        elif len(parts) >= 2 and parts[0] in ("shorts", "embed", "live"):
+            video_id = parts[1]
+        else:
+            video_id = parse_qs(parsed.query).get("v", [""])[0]
+        if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+            raise ValueError("Vui lòng dùng link một video YouTube (watch, youtu.be hoặc Shorts), không dùng link kênh/playlist.")
+
+        def report(status):
+            if not progress_callback:
+                return
+            total = status.get("total_bytes") or status.get("total_bytes_estimate") or 0
+            if status.get("status") == "downloading":
+                fraction = min(status.get("downloaded_bytes", 0) / total, 0.95) if total else 0
+                progress_callback(fraction, f"Đang tải YouTube · {fraction:.0%}" if total else "Đang tải YouTube…")
+            elif status.get("status") == "finished":
+                progress_callback(0.95, "Đã tải luồng YouTube, đang ghép hình và âm thanh…")
+
+        final_paths = []
+        options = {
+            "outtmpl": str(self.download_dir / f"{custom_filename or 'youtube_' + video_id}.%(ext)s"),
+            "format": "bestvideo+bestaudio/best", "merge_output_format": "mp4",
+            "noplaylist": True, "quiet": True,
+            "progress_hooks": [report], "post_hooks": [lambda filename: final_paths.append(Path(filename))],
+        }
+        ffmpeg = shutil.which("ffmpeg")
+        if ffmpeg:
+            options["ffmpeg_location"] = ffmpeg
+        # yt-dlp enables Deno by default; explicitly enable installed alternatives.
+        runtimes = {name: {"path": path} for name in ("deno", "node", "bun", "qjs")
+                    if (path := shutil.which(name))}
+        if runtimes:
+            options["js_runtimes"] = runtimes
+        # Raw cookie text in the GUI belongs to Douyin. Never send it to YouTube.
+        if self.cookie_config.cookie_file:
+            cookie_file = Path(self.cookie_config.cookie_file)
+            if not cookie_file.is_file():
+                raise FileNotFoundError(f"Không tìm thấy file cookie: {cookie_file}")
+            options["cookiefile"] = str(cookie_file)
+        elif self.cookie_config.browser_name:
+            options["cookiesfrombrowser"] = (self.cookie_config.browser_name.lower().strip(), None, None, None)
+        try:
+            with yt_dlp.YoutubeDL(options) as ydl:
+                info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
+                if not info or info.get("_type") in ("playlist", "multi_video"):
+                    raise RuntimeError("Liên kết không trả về một video YouTube hợp lệ.")
+                prepared = Path(ydl.prepare_filename(info))
+                candidates = list(reversed(final_paths)) + [prepared.with_suffix(".mp4"), prepared]
+                for candidate in candidates:
+                    if candidate.is_file() and candidate.stat().st_size > 1000:
+                        if progress_callback:
+                            progress_callback(1.0, "Đã tải video YouTube.")
+                        return candidate.resolve()
+                raise RuntimeError("Không tìm thấy file video sau khi tải và ghép luồng.")
+        except yt_dlp.utils.DownloadError as exc:
+            raise RuntimeError(f"Không thể tải YouTube: {exc}\nKiểm tra liên kết, cập nhật yt-dlp hoặc chọn file cookie/trình duyệt nếu video cần đăng nhập.") from exc
 
     def resolve_redirect_url(self, short_url: str) -> str:
         """Theo dõi redirect của link rút gọn (v.douyin.com/xxxx) để lấy URL gốc có chứa Video ID"""
@@ -335,6 +409,9 @@ class DouyinDownloader:
         clean_url = self.extract_url(url_or_text)
         if not clean_url.startswith("http"):
             raise ValueError(f"URL không hợp lệ: {url_or_text}")
+
+        if self.detect_source(clean_url) == "youtube":
+            return self._download_youtube(clean_url, custom_filename, progress_callback)
 
         resolved_url = self.resolve_redirect_url(clean_url)
         video_id = self.extract_video_id(resolved_url) or self.extract_video_id(clean_url)

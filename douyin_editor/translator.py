@@ -12,7 +12,15 @@ from typing import List, Optional
 import requests
 from tqdm import tqdm
 
-from config import PipelineConfig
+from config import PipelineConfig, get_target_language
+
+
+def translation_instruction_for_voice(config: PipelineConfig, instruction: str) -> str:
+    if config.whisper_language == "en":
+        instruction = instruction.replace("Tiếng Trung", "Tiếng Anh").replace("tiếng Trung", "tiếng Anh").replace("TIẾNG TRUNG", "TIẾNG ANH")
+    if get_target_language(config) == "ja":
+        instruction = instruction.replace("Tiếng Việt", "Tiếng Nhật").replace("tiếng Việt", "tiếng Nhật")
+    return instruction
 from transcriber import SubtitleItem
 
 logger = logging.getLogger(__name__)
@@ -361,6 +369,8 @@ class DeepSeekTranslator:
             "5. CHỈ TRẢ VỀ DUY NHẤT nội dung file SRT hoàn chỉnh. Không thêm lời chào, không kèm giải thích, không bọc trong thẻ markdown ```."
         )
 
+        system_instruction = translation_instruction_for_voice(self.config, system_instruction)
+
         last_error = None
         for model in unique_models:
             for attempt in range(1, max_retries + 1):
@@ -444,7 +454,8 @@ class DeepSeekTranslator:
         with tqdm(total=total_items, desc="[Bước 3] DeepSeek Dịch thuật SRT", leave=False) as pbar:
             for b_idx, batch in enumerate(batches, 1):
                 batch_srt_chunk = "\n\n".join([item.to_srt_block().strip() for item in batch])
-                prompt = f"[DỮ LIỆU PHỤ ĐỀ TIẾNG TRUNG]:\n{batch_srt_chunk}"
+                source_name = "TIẾNG ANH" if self.config.whisper_language == "en" else "TIẾNG TRUNG"
+                prompt = f"[DỮ LIỆU PHỤ ĐỀ {source_name}]:\n{batch_srt_chunk}"
 
                 try:
                     response_text = self._call_deepseek_api(prompt, timeout=120)
@@ -634,10 +645,13 @@ class GeminiTranslator:
             "5. CHỈ TRẢ VỀ DUY NHẤT nội dung file SRT hoàn chỉnh. Không thêm lời chào, không kèm giải thích, không bọc trong thẻ markdown ```."
         )
 
+        system_instruction = translation_instruction_for_voice(self.config, system_instruction)
+
         with tqdm(total=total_items, desc="[Bước 3] Gemini Dịch thuật SRT", leave=False) as pbar:
             for b_idx, batch in enumerate(batches, 1):
                 batch_srt_chunk = "\n\n".join([item.to_srt_block().strip() for item in batch])
-                prompt = f"{system_instruction}\n\n[DỮ LIỆU PHỤ ĐỀ TIẾNG TRUNG]:\n{batch_srt_chunk}"
+                source_name = "TIẾNG ANH" if self.config.whisper_language == "en" else "TIẾNG TRUNG"
+                prompt = f"{system_instruction}\n\n[DỮ LIỆU PHỤ ĐỀ {source_name}]:\n{batch_srt_chunk}"
 
                 try:
                     response_text = self._call_gemini_api(prompt, timeout=120)

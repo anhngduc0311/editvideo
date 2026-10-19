@@ -375,6 +375,15 @@ SUBTITLE_PRESETS = {
 
 
 VOICE_PRESETS = {
+    "japanese_minecraft_clone": {
+        "name": "🎮 Nam Nhật Minecraft (Clone từ video)",
+        "voice": "openvoice_japanese_minecraft",
+        "resource_id": "",
+        "rate": "1.0",
+        "provider": "openvoice",
+        "language": "ja",
+        "preview_file": "japanese_youtube_voice_clone.mp3",
+    },
     "co_gai_hoat_ngon": {
         "name": "🔥 Cô Gái Hoạt Ngôn (CapCut Chính Chủ)",
         "voice": "BV074_streaming",
@@ -414,6 +423,29 @@ VOICE_PRESETS = {
 }
 
 
+def get_voice_preset(voice: str) -> dict:
+    for key, preset in VOICE_PRESETS.items():
+        if voice in (key, preset["voice"], preset["name"]):
+            return preset
+    return {}
+
+
+def get_tts_language(voice: str) -> str:
+    return get_voice_preset(voice).get("language", "vi")
+
+
+TRANSLATION_MODES = {
+    "Tiếng Trung → Tiếng Việt": ("zh", "vi"),
+    "Tiếng Trung → Tiếng Nhật": ("zh", "ja"),
+    "Tiếng Anh → Tiếng Nhật": ("en", "ja"),
+}
+
+
+def get_target_language(config) -> str:
+    # Existing CLI callers can continue choosing the target through their voice.
+    return config.target_language or get_tts_language(config.tts_config.voice)
+
+
 @dataclass
 class TTSConfig:
     """
@@ -449,6 +481,7 @@ class PipelineConfig:
     gemini_model_name: str = "gemini-3.6-flash"
     whisper_model_size: str = "small"
     whisper_language: str = "zh"
+    target_language: Optional[str] = None  # None preserves the voice-based default
     
     # Video Processing
     speed_factor: float = 0.70           # Tốc độ làm chậm để AI dịch & đọc tiếng Việt khớp timeline

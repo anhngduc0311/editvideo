@@ -19,7 +19,7 @@ import customtkinter as ctk
 import copy
 from typing import Callable, Dict, List, Optional, Tuple
 
-from config import BlurRegion, CookieConfig, PipelineConfig, SubtitleStyle, SUBTITLE_PRESETS, TTSConfig, VOICE_PRESETS
+from config import BlurRegion, CookieConfig, PipelineConfig, SubtitleStyle, SUBTITLE_PRESETS, TTSConfig, VOICE_PRESETS, TRANSLATION_MODES, get_tts_language
 from pipeline import DouyinAutoPipeline
 from roi_selector import VisualROISelectorDialog
 
@@ -39,9 +39,10 @@ class DouyinEditorApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("🎬 Douyin Video AI Auto Editor - Tự Động Hóa Re-up & Dịch Video AI 8 Bước")
-        self.geometry("1180, 880")
-        self.minsize(1020, 750)
+        self.title("Douyin Studio • Video AI Editor")
+        self.geometry("1240x860")
+        self.minsize(1120, 720)
+        self.configure(fg_color="#0b101b")
 
         self.pipeline_thread: threading.Thread = None
         self.is_running = False
@@ -78,6 +79,8 @@ class DouyinEditorApp(ctk.CTk):
         self.saved_keep_bgm = False
         self.saved_vocal_model = "MDX-Net Inst HQ 3 (Chuẩn - Khuyên dùng cho Nhạc Nền)"
         self.saved_vocal_speed = "⚡ Siêu Tốc (Turbo 0% Overlap - ~2.5x real-time)"
+        self.saved_voice = "🔥 Cô Gái Hoạt Ngôn (CapCut Chính Chủ)"
+        self.saved_translation_mode = ""
         if CONFIG_FILE.exists():
             try:
                 data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
@@ -92,6 +95,8 @@ class DouyinEditorApp(ctk.CTk):
                 self.saved_keep_bgm = data.get("keep_bgm", False)
                 self.saved_vocal_model = data.get("vocal_model", self.saved_vocal_model)
                 self.saved_vocal_speed = data.get("vocal_speed", self.saved_vocal_speed)
+                self.saved_voice = data.get("tts_voice", self.saved_voice)
+                self.saved_translation_mode = data.get("translation_mode", "")
             except Exception:
                 pass
 
@@ -118,51 +123,76 @@ class DouyinEditorApp(ctk.CTk):
                 "keep_bgm": bool(self.chk_bgm.get()) if hasattr(self, "chk_bgm") else False,
                 "vocal_model": self.cmb_vocal_model.get() if hasattr(self, "cmb_vocal_model") else self.saved_vocal_model,
                 "vocal_speed": self.cmb_vocal_speed.get() if hasattr(self, "cmb_vocal_speed") else self.saved_vocal_speed,
+                "tts_voice": self.cmb_voice.get() if hasattr(self, "cmb_voice") else self.saved_voice,
+                "translation_mode": self.cmb_translation_mode.get() if hasattr(self, "cmb_translation_mode") else self.saved_translation_mode,
             }
             CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
             pass
 
     def _build_ui(self):
-        self.grid_columnconfigure(0, weight=5)
-        self.grid_columnconfigure(1, weight=5)
+        self.grid_columnconfigure(0, weight=3, minsize=650)
+        self.grid_columnconfigure(1, weight=2, minsize=400)
         self.grid_rowconfigure(1, weight=1)
 
         # -------------------------------------------------------------
         # HEADER
         # -------------------------------------------------------------
-        header_frame = ctk.CTkFrame(self, height=60, corner_radius=0, fg_color=("#1f2937", "#111827"))
-        header_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=0, pady=(0, 8))
+        header_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="#0b101b")
+        header_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=24, pady=(20, 12))
         header_frame.grid_columnconfigure(0, weight=1)
 
         title_label = ctk.CTkLabel(
             header_frame,
-            text="✨ DOUYIN VIDEO AI AUTO-EDITOR PRO (8 BƯỚC TỰ ĐỘNG)",
-            font=ctk.CTkFont(size=20, weight="bold"),
-            text_color=("#60a5fa", "#38bdf8")
+            text="DOUYIN  /  STUDIO",
+            font=ctk.CTkFont(family="Segoe UI", size=25, weight="bold"),
+            text_color="#f1f5f9"
         )
-        title_label.grid(row=0, column=0, padx=20, pady=12, sticky="w")
+        title_label.grid(row=0, column=0, pady=(0, 2), sticky="w")
 
         subtitle_label = ctk.CTkLabel(
             header_frame,
-            text="yt-dlp • Whisper STT • DeepSeek / Gemini AI Translate • Hardsub • Demucs BGM • CapCut AI TTS",
-            font=ctk.CTkFont(size=12),
-            text_color="gray70"
+            text="Douyin & YouTube · Dịch thuật, giọng đọc và phụ đề AI.",
+            font=ctk.CTkFont(family="Segoe UI", size=13),
+            text_color="#94a3b8"
         )
-        subtitle_label.grid(row=0, column=1, padx=20, pady=12, sticky="e")
+        subtitle_label.grid(row=1, column=0, sticky="w")
+        self.lbl_session_status = ctk.CTkLabel(
+            header_frame, text="●  Sẵn sàng", corner_radius=14,
+            fg_color="#132c2b", text_color="#6ee7b7", width=130, height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+        )
+        self.lbl_session_status.grid(row=0, column=1, rowspan=2, sticky="e")
 
         # -------------------------------------------------------------
         # CỘT TRÁI: CẤU HÌNH & THIẾT LẬP
         # -------------------------------------------------------------
-        left_scroll = ctk.CTkScrollableFrame(self, corner_radius=10)
-        left_scroll.grid(row=1, column=0, sticky="nsew", padx=(15, 8), pady=5)
-        left_scroll.grid_columnconfigure(0, weight=1)
+        self.settings_tabs = ctk.CTkTabview(
+            self, corner_radius=16, fg_color="#111a29",
+            segmented_button_fg_color="#111a29",
+            segmented_button_selected_color="#2563eb",
+            segmented_button_selected_hover_color="#1d4ed8",
+            segmented_button_unselected_color="#111a29",
+            segmented_button_unselected_hover_color="#22324b",
+            text_color="#e2e8f0", anchor="w",
+        )
+        self.settings_tabs.grid(row=1, column=0, sticky="nsew", padx=(24, 8), pady=0)
+        pages = {}
+        for name in ("Nguồn video", "Hình ảnh", "Âm thanh", "Phụ đề"):
+            tab = self.settings_tabs.add(name)
+            tab.grid_rowconfigure(0, weight=1)
+            tab.grid_columnconfigure(0, weight=1)
+            page = ctk.CTkScrollableFrame(tab, fg_color="transparent", corner_radius=0)
+            page.grid(row=0, column=0, sticky="nsew")
+            pages[name] = page
+        left_scroll = pages["Nguồn video"]
 
         # 1. Card Nhập link Douyin
         url_card = ctk.CTkFrame(left_scroll, corner_radius=8)
         url_card.pack(fill="x", padx=5, pady=5)
         
-        ctk.CTkLabel(url_card, text="🔗 Link Video Douyin / Chuỗi Chia Sẻ:", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=12, pady=(10, 4))
+        ctk.CTkLabel(url_card, text="Video của bạn", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=12, pady=(14, 4))
+        ctk.CTkLabel(url_card, text="Dán link Douyin, YouTube hoặc YouTube Shorts · Tự nhận diện nguồn.", text_color="#94a3b8").pack(anchor="w", padx=12, pady=(0, 6))
         
         self.url_textbox = ctk.CTkTextbox(url_card, height=65, font=ctk.CTkFont(size=12))
         self.url_textbox.pack(fill="x", padx=12, pady=4)
@@ -182,6 +212,18 @@ class DouyinEditorApp(ctk.CTk):
         )
         btn_clear.pack(side="left")
 
+        language_card = ctk.CTkFrame(left_scroll, corner_radius=8)
+        language_card.pack(fill="x", padx=5, pady=5)
+        ctk.CTkLabel(language_card, text="Ngôn ngữ dịch", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=12, pady=(12, 4))
+        self.cmb_translation_mode = ctk.CTkComboBox(
+            language_card, values=list(TRANSLATION_MODES), state="readonly",
+            command=self._on_translation_changed,
+        )
+        default_mode = "Tiếng Trung → Tiếng Nhật" if get_tts_language(self.saved_voice) == "ja" else "Tiếng Trung → Tiếng Việt"
+        self.cmb_translation_mode.set(self.saved_translation_mode if self.saved_translation_mode in TRANSLATION_MODES else default_mode)
+        self.cmb_translation_mode.pack(fill="x", padx=12, pady=(2, 6))
+        ctk.CTkLabel(language_card, text="Áp dụng cho nhận diện lời thoại, bản dịch và giọng đọc.", font=ctk.CTkFont(size=12), text_color="#94a3b8").pack(anchor="w", padx=12, pady=(0, 10))
+
         # 2. Card Cookie Douyin
         cookie_card = ctk.CTkFrame(left_scroll, corner_radius=8)
         cookie_card.pack(fill="x", padx=5, pady=5)
@@ -189,7 +231,8 @@ class DouyinEditorApp(ctk.CTk):
         cookie_header_row = ctk.CTkFrame(cookie_card, fg_color="transparent")
         cookie_header_row.pack(fill="x", padx=12, pady=(10, 4))
         
-        ctk.CTkLabel(cookie_header_row, text="🍪 Cấu Hình Cookie Douyin (Tránh chặn tải):", font=ctk.CTkFont(size=14, weight="bold")).pack(side="left")
+        ctk.CTkLabel(cookie_header_row, text="Cookie kết nối (tùy chọn)", font=ctk.CTkFont(size=14, weight="bold")).pack(side="left")
+        ctk.CTkLabel(cookie_card, text="YouTube thường không cần cookie. Cookie text chỉ áp dụng cho Douyin.", font=ctk.CTkFont(size=11), text_color="#94a3b8").pack(anchor="w", padx=12, pady=(0, 4))
         
         btn_help_cookie = ctk.CTkButton(
             cookie_header_row, text="❓ Hướng dẫn", width=85, height=24,
@@ -249,7 +292,7 @@ class DouyinEditorApp(ctk.CTk):
 
         provider_header_row = ctk.CTkFrame(key_card, fg_color="transparent")
         provider_header_row.pack(fill="x", padx=12, pady=(10, 4))
-        ctk.CTkLabel(provider_header_row, text="🤖 AI Dịch Thuật Phụ Đề:", font=ctk.CTkFont(size=14, weight="bold")).pack(side="left")
+        ctk.CTkLabel(provider_header_row, text="Dịch thuật AI", font=ctk.CTkFont(size=14, weight="bold")).pack(side="left")
 
         # Provider Selector Segmented Button
         self.seg_provider = ctk.CTkSegmentedButton(
@@ -339,10 +382,10 @@ class DouyinEditorApp(ctk.CTk):
         self.lbl_api_status.pack(anchor="w", padx=12, pady=(0, 10))
 
         # 4. Card Tùy chọn Xử lý Video (Speed & Blur ROI)
-        video_card = ctk.CTkFrame(left_scroll, corner_radius=8)
+        video_card = ctk.CTkFrame(pages["Hình ảnh"], corner_radius=8)
         video_card.pack(fill="x", padx=5, pady=5)
 
-        ctk.CTkLabel(video_card, text="⚙️ Cài Đặt Tốc Độ & Vùng Làm Mờ Phụ Đề Gốc:", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=12, pady=(10, 6))
+        ctk.CTkLabel(video_card, text="Tốc độ & làm mờ phụ đề gốc", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=12, pady=(14, 6))
 
         # Speed Slider (Làm chậm cho TTS)
         speed_row = ctk.CTkFrame(video_card, fg_color="transparent")
@@ -425,31 +468,31 @@ class DouyinEditorApp(ctk.CTk):
         self.slider_blur_h.grid(row=1, column=1, sticky="ew", padx=(6, 0))
 
         # 5. Card TTS & BGM (AI MDX-Net Engine)
-        audio_card = ctk.CTkFrame(left_scroll, corner_radius=8)
+        audio_card = ctk.CTkFrame(pages["Âm thanh"], corner_radius=8)
         audio_card.pack(fill="x", padx=5, pady=5)
 
-        ctk.CTkLabel(audio_card, text="🎙️ Giọng Đọc AI (CapCut TTS) & Tách Nhạc Nền (MDX-Net):", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=12, pady=(10, 6))
+        ctk.CTkLabel(audio_card, text="Giọng đọc & nhạc nền", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=12, pady=(14, 6))
 
         tts_row = ctk.CTkFrame(audio_card, fg_color="transparent")
         tts_row.pack(fill="x", padx=12, pady=4)
         ctk.CTkLabel(tts_row, text="Giọng đọc:").pack(side="left", padx=(0, 4))
 
-        voice_options = [
-            "🔥 Cô Gái Hoạt Ngôn (CapCut Chính Chủ)",
-            "🔥 Thanh Niên Tự Tin (CapCut Chính Chủ)",
-            "🌸 Nhỏ Ngọt Ngào (CapCut Nữ Dễ Thương)",
-            "✨ Mai (CapCut Nữ Truyền Cảm)",
-            "🎙️ Giọng Nữ Phổ Thông (CapCut Chuẩn)",
-            "⚡ Kenny Đại Đế (CapCut Giọng Ngầu)"
-        ]
+        voice_options = [preset["name"] for preset in VOICE_PRESETS.values()]
 
         self.cmb_voice = ctk.CTkComboBox(
             tts_row,
             values=voice_options,
             width=280
         )
-        self.cmb_voice.set("🔥 Cô Gái Hoạt Ngôn (CapCut Chính Chủ)")
+        self.cmb_voice.set(self.saved_voice if self.saved_voice in voice_options else voice_options[0])
         self.cmb_voice.pack(side="left", padx=(0, 8))
+
+        self.lbl_voice_hint = ctk.CTkLabel(
+            audio_card, text="", font=ctk.CTkFont(size=11), text_color="#a1a1aa",
+            wraplength=500, justify="left",
+        )
+        self.lbl_voice_hint.pack(anchor="w", padx=12, pady=(0, 4))
+        self.cmb_voice.configure(command=self._on_voice_changed)
 
         self.btn_preview_voice = ctk.CTkButton(
             tts_row,
@@ -465,7 +508,7 @@ class DouyinEditorApp(ctk.CTk):
         # Checkbox Bật/Tắt tách nhạc nền AI MDX-Net
         self.chk_bgm = ctk.CTkCheckBox(
             audio_card,
-            text="🎵 Tách Nhạc Nền Gốc Bằng AI MDX-Net Turbo (Xóa tiếng Trung, giữ beat & SFX)",
+            text="Giữ nhạc nền gốc · Tách giọng nói bằng AI",
             font=ctk.CTkFont(size=12, weight="bold"),
             command=self._on_bgm_toggled
         )
@@ -570,10 +613,10 @@ class DouyinEditorApp(ctk.CTk):
         self._on_bgm_toggled()
 
         # 6. Card Phụ đề tiếng Việt (CapCut Subtitle Style Grid)
-        sub_card = ctk.CTkFrame(left_scroll, corner_radius=8)
+        sub_card = ctk.CTkFrame(pages["Phụ đề"], corner_radius=8)
         sub_card.pack(fill="x", padx=5, pady=5)
 
-        ctk.CTkLabel(sub_card, text="✍️ Mẫu Chữ Phụ Đề (CapCut Text Presets):", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=12, pady=(10, 4))
+        ctk.CTkLabel(sub_card, text="Thiết kế phụ đề", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=12, pady=(14, 4))
 
         # Grid mẫu chữ kiểu CapCut (6 cột)
         grid_frame = ctk.CTkFrame(sub_card, fg_color="#18181b", corner_radius=8)
@@ -620,7 +663,7 @@ class DouyinEditorApp(ctk.CTk):
         ctk.CTkLabel(sub_row, text="Font chữ:").grid(row=0, column=0, sticky="w")
         self.cmb_font = ctk.CTkComboBox(
             sub_row,
-            values=["Arial", "Montserrat", "Roboto", "Tahoma", "Verdana", "Segoe UI"],
+            values=["Arial", "Montserrat", "Roboto", "Tahoma", "Verdana", "Segoe UI", "Meiryo", "Yu Gothic"],
             command=lambda _: self._update_sub_preview_banner()
         )
         self.cmb_font.set("Arial")
@@ -678,66 +721,65 @@ class DouyinEditorApp(ctk.CTk):
         # -------------------------------------------------------------
         # CỘT PHẢI: TIẾN TRÌNH 8 BƯỚC & LOG CONSOLE
         # -------------------------------------------------------------
-        right_frame = ctk.CTkFrame(self, corner_radius=10)
-        right_frame.grid(row=1, column=1, sticky="nsew", padx=(8, 15), pady=5)
+        right_frame = ctk.CTkFrame(self, corner_radius=16, fg_color="#111a29")
+        right_frame.grid(row=1, column=1, sticky="nsew", padx=(8, 24), pady=(8, 0))
         right_frame.grid_columnconfigure(0, weight=1)
         right_frame.grid_rowconfigure(2, weight=1)
 
-        steps_card = ctk.CTkFrame(right_frame, corner_radius=8)
+        steps_card = ctk.CTkFrame(right_frame, corner_radius=10, fg_color="#172235")
         steps_card.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
         steps_card.grid_columnconfigure((0, 1), weight=1)
 
-        ctk.CTkLabel(steps_card, text="📊 Quy Trình Xử Lý 8 Bước Tự Động:", font=ctk.CTkFont(size=14, weight="bold")).grid(
+        ctk.CTkLabel(steps_card, text="QUY TRÌNH TỰ ĐỘNG", font=ctk.CTkFont(size=13, weight="bold")).grid(
             row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 6)
         )
 
         self.step_labels = []
-        step_names = [
-            "1. Tải Video Douyin (Multi-Engine)",
-            "2. Tiền xử lý (0.70x + Tự chọn Blur)",
-            "3. Whisper / Web Speech-to-Text",
-            "4. Dịch thuật AI (DeepSeek / Gemini)",
-            "5. Tách giọng nói gốc & Giữ BGM",
-            "6. Đọc CapCut TTS & Đồng bộ Phụ đề",
-            "7. Hardcode Phụ đề tiếng Việt",
-            "8. Render Video MP4 Hoàn Thiện"
+        self.step_names = [
+            "01   Tải video gốc", "02   Tốc độ & vùng làm mờ",
+            "03   Nhận diện lời thoại", "04   Dịch nội dung bằng AI",
+            "05   Tách giọng & nhạc nền", "06   Tạo giọng đọc & đồng bộ",
+            "07   Ghép phụ đề", "08   Xuất video hoàn chỉnh",
         ]
 
-        for i, name in enumerate(step_names):
-            r = 1 + (i // 2)
-            c = i % 2
+        for i, name in enumerate(self.step_names):
+            r = 1 + i
+            c = 0
             lbl = ctk.CTkLabel(
                 steps_card,
-                text=f"⚪ {name}",
+                text=f"○  {name}",
                 font=ctk.CTkFont(size=12),
+                height=22,
                 anchor="w",
                 text_color="gray70"
             )
-            lbl.grid(row=r, column=c, sticky="w", padx=12, pady=3)
+            lbl.grid(row=r, column=c, columnspan=2, sticky="ew", padx=12, pady=2)
             self.step_labels.append(lbl)
 
-        prog_card = ctk.CTkFrame(right_frame, corner_radius=8)
+        prog_card = ctk.CTkFrame(right_frame, corner_radius=10, fg_color="#172235")
         prog_card.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
         prog_card.grid_columnconfigure(0, weight=1)
 
         self.lbl_status = ctk.CTkLabel(
             prog_card,
-            text="Trạng thái: Sẵn sàng thực hiện",
+            text="Sẵn sàng tạo video",
             font=ctk.CTkFont(size=13, weight="bold"),
             text_color="#38bdf8"
         )
         self.lbl_status.pack(anchor="w", padx=12, pady=(8, 2))
 
-        self.progress_bar = ctk.CTkProgressBar(prog_card, height=12)
+        self.lbl_progress = ctk.CTkLabel(prog_card, text="0%", text_color="#94a3b8", font=ctk.CTkFont(size=12))
+        self.lbl_progress.pack(anchor="e", padx=12)
+        self.progress_bar = ctk.CTkProgressBar(prog_card, height=6, fg_color="#26354d", progress_color="#3b82f6")
         self.progress_bar.set(0.0)
         self.progress_bar.pack(fill="x", padx=12, pady=(2, 8))
 
-        log_card = ctk.CTkFrame(right_frame, corner_radius=8)
+        log_card = ctk.CTkFrame(right_frame, corner_radius=10, fg_color="#172235")
         log_card.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
         log_card.grid_columnconfigure(0, weight=1)
         log_card.grid_rowconfigure(1, weight=1)
 
-        ctk.CTkLabel(log_card, text="📜 Nhật Ký Xử Lý (Live Console Logs):", font=ctk.CTkFont(size=13, weight="bold")).grid(
+        ctk.CTkLabel(log_card, text="NHẬT KÝ HOẠT ĐỘNG", font=ctk.CTkFont(size=12, weight="bold")).grid(
             row=0, column=0, sticky="w", padx=12, pady=(8, 4)
         )
 
@@ -747,42 +789,94 @@ class DouyinEditorApp(ctk.CTk):
         # -------------------------------------------------------------
         # FOOTER / CONTROL BAR
         # -------------------------------------------------------------
-        footer_frame = ctk.CTkFrame(self, height=65, corner_radius=10)
-        footer_frame.grid(row=2, column=0, columnspan=2, sticky="ew", padx=15, pady=(5, 15))
+        footer_frame = ctk.CTkFrame(self, height=65, corner_radius=14, fg_color="#111a29")
+        footer_frame.grid(row=2, column=0, columnspan=2, sticky="ew", padx=24, pady=(16, 20))
         footer_frame.grid_columnconfigure(0, weight=3)
         footer_frame.grid_columnconfigure((1, 2), weight=1)
 
         self.btn_run = ctk.CTkButton(
             footer_frame,
-            text="🚀 BẮT ĐẦU XỬ LÝ VIDEO TỰ ĐỘNG",
+            text="Bắt đầu xử lý   →",
             font=ctk.CTkFont(size=15, weight="bold"),
             height=44,
-            fg_color="#10b981",
-            hover_color="#059669",
+            fg_color="#2563eb",
+            hover_color="#1d4ed8",
             command=self._start_pipeline
         )
         self.btn_run.grid(row=0, column=0, sticky="ew", padx=(12, 8), pady=10)
 
         self.btn_open_folder = ctk.CTkButton(
             footer_frame,
-            text="📁 Mở Thư Mục Kết Quả",
+            text="Mở thư mục kết quả",
             height=44,
-            fg_color="#3b82f6",
-            hover_color="#2563eb",
+            fg_color="#22324b",
+            hover_color="#304562",
             command=self._open_output_folder
         )
         self.btn_open_folder.grid(row=0, column=1, sticky="ew", padx=8, pady=10)
 
         self.btn_play_video = ctk.CTkButton(
             footer_frame,
-            text="🎬 Xem Video Thành Phẩm",
+            text="▶  Xem thành phẩm",
             height=44,
-            fg_color="#8b5cf6",
-            hover_color="#7c3aed",
+            fg_color="#22324b",
+            hover_color="#304562",
             command=self._play_output_video,
             state="disabled"
         )
         self.btn_play_video.grid(row=0, column=2, sticky="ew", padx=(8, 12), pady=10)
+        self._polish_settings(pages)
+        self._on_translation_changed(self.cmb_translation_mode.get())
+        self._update_sub_preview_banner()
+        self._append_log("Dán link video, chọn cài đặt và bấm Bắt đầu xử lý.", "STUDIO")
+
+    def _polish_settings(self, pages):
+        """Apply a consistent visual hierarchy without changing preset artwork."""
+        cards = []
+        for page in pages.values():
+            cards.extend(w for w in page.winfo_children() if isinstance(w, ctk.CTkFrame))
+        for card in cards:
+            card.configure(fg_color="#172235", corner_radius=12, border_width=1, border_color="#26354d")
+            card.pack_configure(padx=2, pady=(4, 12))
+
+        def style(widget):
+            if widget in self.sub_preset_buttons.values() or widget in (self.preview_sub_frame, self.lbl_preview_sub_text):
+                return
+            if isinstance(widget, ctk.CTkSegmentedButton):
+                widget.configure(fg_color="#0e1726", selected_color="#2563eb",
+                                 selected_hover_color="#1d4ed8", unselected_color="#0e1726",
+                                 unselected_hover_color="#263954", corner_radius=8)
+                return
+            if isinstance(widget, ctk.CTkTabview):
+                widget.configure(fg_color="#0e1726", segmented_button_fg_color="#0e1726",
+                                 segmented_button_selected_color="#2563eb",
+                                 segmented_button_selected_hover_color="#1d4ed8",
+                                 segmented_button_unselected_color="#0e1726",
+                                 segmented_button_unselected_hover_color="#263954")
+            if isinstance(widget, ctk.CTkLabel):
+                widget.configure(text_color="#cbd5e1")
+            elif isinstance(widget, ctk.CTkComboBox):
+                widget.configure(height=34, corner_radius=8, fg_color="#0e1726", border_color="#33445e",
+                                 button_color="#263954", button_hover_color="#365071",
+                                 dropdown_fg_color="#172235", dropdown_hover_color="#263954")
+            elif isinstance(widget, ctk.CTkEntry):
+                widget.configure(height=36, corner_radius=8, fg_color="#0e1726", border_color="#33445e")
+            elif isinstance(widget, ctk.CTkTextbox):
+                widget.configure(fg_color="#0e1726", border_width=1, border_color="#26354d", corner_radius=8)
+            elif isinstance(widget, ctk.CTkButton):
+                widget.configure(corner_radius=8, height=max(30, widget.cget("height")),
+                                 fg_color="#263954", hover_color="#365071")
+            elif isinstance(widget, ctk.CTkSlider):
+                widget.configure(progress_color="#3b82f6", button_color="#60a5fa", button_hover_color="#93c5fd", fg_color="#30415a")
+            elif isinstance(widget, ctk.CTkCheckBox):
+                widget.configure(fg_color="#2563eb", hover_color="#1d4ed8", border_color="#52657e", corner_radius=5)
+            for child in widget.winfo_children():
+                style(child)
+
+        for page in pages.values():
+            style(page)
+        self.url_textbox.configure(height=92, font=ctk.CTkFont(family="Segoe UI", size=14))
+        self.log_textbox.configure(fg_color="#0b1320", text_color="#94a3b8", corner_radius=8)
 
     # -----------------------------------------------------------------
     # UI HANDLERS & LOGIC
@@ -831,6 +925,34 @@ class DouyinEditorApp(ctk.CTk):
             self.key_entry.configure(show="•")
             self.btn_toggle_key.configure(text="👁")
 
+    def _on_voice_changed(self, chosen):
+        selected = next((p for p in VOICE_PRESETS.values() if p["name"] == chosen), {})
+        if selected:
+            language = selected.get("language", "vi")
+            source, target = TRANSLATION_MODES[self.cmb_translation_mode.get()]
+            if language != target:
+                mode = "Tiếng Trung → Tiếng Việt" if language == "vi" else "Tiếng Trung → Tiếng Nhật"
+                self.cmb_translation_mode.set(mode)
+                self._on_translation_changed(mode)
+                return
+        self.lbl_voice_hint.configure(text=(
+            "Giọng clone từ video • Tự dịch và đọc tiếng Nhật • Cần Internet để tạo lời đọc"
+            if selected.get("language") == "ja" else ""
+        ))
+
+    def _on_translation_changed(self, chosen):
+        source, target = TRANSLATION_MODES[chosen]
+        if get_tts_language(self.cmb_voice.get()) != target:
+            preset = next(p for p in VOICE_PRESETS.values() if p.get("language", "vi") == target)
+            self.cmb_voice.set(preset["name"])
+        self._on_voice_changed(self.cmb_voice.get())
+        if target == "ja" and self.cmb_font.get() == "Arial":
+            self.cmb_font.set("Meiryo")
+        elif target == "vi" and self.cmb_font.get() == "Meiryo":
+            self.cmb_font.set("Arial")
+        self.lbl_preview_sub_text.configure(text="こんにちは、みなさん！" if target == "ja" else "Phụ đề mẫu tiếng Việt")
+        self._update_sub_preview_banner()
+
     def _preview_voice_clicked(self):
         """Phát trực tiếp file mẫu giọng hoặc gọi CapCut TTS API sinh audio preview để người dùng nghe thử"""
         chosen = self.cmb_voice.get()
@@ -840,12 +962,15 @@ class DouyinEditorApp(ctk.CTk):
             try:
                 import io, tempfile, winsound, pathlib
                 from pydub import AudioSegment
-                from tts_synchronizer import CapCutTTSEngine
+                from tts_synchronizer import create_tts_engine
 
                 tts_dir = pathlib.Path(__file__).parent.parent / "tts"
                 sample_file = None
+                selected_preset = next((p for p in VOICE_PRESETS.values() if p["name"] == chosen), {})
 
-                if "Hoạt Ngôn" in chosen or "hoat_ngon" in chosen:
+                if selected_preset.get("preview_file"):
+                    sample_file = tts_dir / selected_preset["preview_file"]
+                elif "Hoạt Ngôn" in chosen or "hoat_ngon" in chosen:
                     if (tts_dir / "thanhnientutin.mp3").exists():
                         sample_file = tts_dir / "thanhnientutin.mp3"
                     elif (tts_dir / "cogaihoatngon.mp3").exists():
@@ -862,10 +987,9 @@ class DouyinEditorApp(ctk.CTk):
                     seg = AudioSegment.from_file(str(sample_file))
                     seg.export(str(tmp_wav), format="wav")
                     winsound.PlaySound(str(tmp_wav), winsound.SND_FILENAME | winsound.SND_ASYNC)
-                    self._append_log(f"Đang phát mẫu giọng CapCut: {sample_file.name} ({chosen})", "AUDIO")
+                    self._append_log(f"Đang phát mẫu giọng: {sample_file.name} ({chosen})", "AUDIO")
                 else:
                     # Gọi trực tiếp CapCut TTS API
-                    engine = CapCutTTSEngine()
                     voice_code = "BV074_streaming"
                     res_id = "7102355709945188865"
                     for p_val in VOICE_PRESETS.values():
@@ -875,12 +999,15 @@ class DouyinEditorApp(ctk.CTk):
                             break
 
                     sample_text = "Xin chào các bạn, đây là bản nghe thử giọng đọc CapCut của bạn."
+                    if selected_preset.get("language") == "ja":
+                        sample_text = "みんな、こんにちは！今日はマインクラフトの世界を冒険していくよ！"
+                    engine = create_tts_engine(voice_code)
                     res_list = engine.synthesize_phrases([sample_text], voice=voice_code, resource_id=res_id)
                     if res_list and res_list[0][1]:
                         seg = AudioSegment.from_file(io.BytesIO(res_list[0][1]))
                         seg.export(str(tmp_wav), format="wav")
                         winsound.PlaySound(str(tmp_wav), winsound.SND_FILENAME | winsound.SND_ASYNC)
-                        self._append_log(f"Đang phát giọng đọc CapCut trực tiếp: {chosen}", "AUDIO")
+                        self._append_log(f"Đang phát giọng đọc: {chosen}", "AUDIO")
                     else:
                         self._append_log(f"Không nhận được âm thanh từ CapCut API cho giọng {chosen}", "WARNING")
             except Exception as e:
@@ -1108,11 +1235,14 @@ class DouyinEditorApp(ctk.CTk):
         def gui_update():
             if current_step == -1:
                 self.lbl_status.configure(text=f"❌ LỖI: {title}", text_color="#ef4444")
+                self.lbl_session_status.configure(text="●  Lỗi xử lý", fg_color="#3b1e29", text_color="#fda4af")
                 self._append_log(f"{title}: {msg}", "ERROR")
                 return
 
             fraction = min(max(current_step / total_steps, 0.0), 1.0)
             self.progress_bar.set(fraction)
+            self.lbl_progress.configure(text=f"{fraction:.0%}")
+            self.lbl_session_status.configure(text="●  Đang xử lý", fg_color="#172e52", text_color="#93c5fd")
             self.lbl_status.configure(
                 text=f"Đang xử lý [{current_step}/{total_steps}]: {title}",
                 text_color="#38bdf8"
@@ -1122,16 +1252,17 @@ class DouyinEditorApp(ctk.CTk):
             for idx, lbl in enumerate(self.step_labels):
                 step_idx = idx + 1
                 if step_idx < current_step:
-                    lbl.configure(text=f"✔ {lbl.cget('text')[2:]}", text_color="#10b981")
+                    lbl.configure(text=f"✓  {self.step_names[idx]}", text_color="#6ee7b7")
                 elif step_idx == current_step:
-                    lbl.configure(text=f"🔄 {lbl.cget('text')[2:]}", text_color="#38bdf8")
+                    lbl.configure(text=f"●  {self.step_names[idx]}", text_color="#60a5fa")
                 else:
-                    lbl.configure(text=f"⚪ {lbl.cget('text')[2:]}", text_color="gray70")
+                    lbl.configure(text=f"○  {self.step_names[idx]}", text_color="#94a3b8")
 
             if current_step == total_steps:
-                for lbl in self.step_labels:
-                    lbl.configure(text=f"✔ {lbl.cget('text')[2:]}", text_color="#10b981")
-                self.lbl_status.configure(text="🎉 ĐÃ HOÀN THÀNH TOÀN BỘ QUY TRÌNH!", text_color="#10b981")
+                for idx, lbl in enumerate(self.step_labels):
+                    lbl.configure(text=f"✓  {self.step_names[idx]}", text_color="#6ee7b7")
+                self.lbl_status.configure(text="Đã hoàn thành video", text_color="#6ee7b7")
+                self.lbl_session_status.configure(text="●  Hoàn thành", fg_color="#132c2b", text_color="#6ee7b7")
 
         self.after(0, gui_update)
 
@@ -1141,7 +1272,7 @@ class DouyinEditorApp(ctk.CTk):
 
         raw_url = self.url_textbox.get("1.0", "end").strip()
         if not raw_url:
-            messagebox.showwarning("Cảnh báo", "Vui lòng nhập đường link Video Douyin!")
+            messagebox.showwarning("Cảnh báo", "Vui lòng nhập đường link video Douyin hoặc YouTube!")
             return
 
         cur_provider = "deepseek" if "DeepSeek" in self.seg_provider.get() else "gemini"
@@ -1155,9 +1286,9 @@ class DouyinEditorApp(ctk.CTk):
         cookie_tab = self.cookie_tabview.get()
         cookie_cfg = CookieConfig()
 
-        if cookie_tab == "Nhập chuỗi Cookie":
+        if cookie_tab == "Dán Cookie Text":
             c_text = self.cookie_textbox.get("1.0", "end").strip()
-            if c_text:
+            if c_text and not c_text.startswith("passport_csrf_token=...;"):
                 cookie_cfg.cookie_str = c_text
         elif cookie_tab == "File cookies.txt":
             if getattr(self, "selected_cookie_file_path", ""):
@@ -1221,6 +1352,8 @@ class DouyinEditorApp(ctk.CTk):
             sub_style.bold = 1 if self.chk_bold_sub.get() else 0
 
         config = PipelineConfig(
+            whisper_language=TRANSLATION_MODES[self.cmb_translation_mode.get()][0],
+            target_language=TRANSLATION_MODES[self.cmb_translation_mode.get()][1],
             llm_provider=cur_provider,
             deepseek_api_key=api_key if cur_provider == "deepseek" else self.saved_deepseek_key,
             deepseek_model_name=self.cmb_ai_model.get().strip() if cur_provider == "deepseek" else self.saved_deepseek_model,
@@ -1246,13 +1379,16 @@ class DouyinEditorApp(ctk.CTk):
         )
 
         self.is_running = True
-        self.btn_run.configure(text="⏳ ĐANG XỬ LÝ VIDEO...", state="disabled", fg_color="#6b7280")
+        self.btn_run.configure(text="Đang xử lý video…", state="disabled", fg_color="#263954")
+        self.lbl_session_status.configure(text="●  Đang xử lý", fg_color="#172e52", text_color="#93c5fd")
+        self.lbl_status.configure(text="Đang khởi tạo quy trình…", text_color="#60a5fa")
+        self.lbl_progress.configure(text="0%")
         self.btn_play_video.configure(state="disabled")
         self.progress_bar.set(0.0)
         self.log_textbox.delete("1.0", "end")
 
-        for lbl in self.step_labels:
-            lbl.configure(text=f"⚪ {lbl.cget('text')[2:]}", text_color="gray70")
+        for idx, lbl in enumerate(self.step_labels):
+            lbl.configure(text=f"○  {self.step_names[idx]}", text_color="#94a3b8")
 
         self._append_log("Bắt đầu khởi chạy quy trình tự động hóa...", "START")
 
@@ -1295,7 +1431,7 @@ class DouyinEditorApp(ctk.CTk):
 
                 def on_success():
                     self.is_running = False
-                    self.btn_run.configure(text="🚀 BẮT ĐẦU XỬ LÝ VIDEO TỰ ĐỘNG", state="normal", fg_color="#10b981")
+                    self.btn_run.configure(text="Bắt đầu xử lý   →", state="normal", fg_color="#2563eb")
                     self.btn_play_video.configure(state="normal")
                     messagebox.showinfo("Thành công", f"Đã edit và dịch video thành công!\n\nFile lưu tại: {final_video.name}")
 
@@ -1305,7 +1441,9 @@ class DouyinEditorApp(ctk.CTk):
                 err_msg = str(e)
                 def on_error(err=err_msg):
                     self.is_running = False
-                    self.btn_run.configure(text="🚀 BẮT ĐẦU XỬ LÝ VIDEO TỰ ĐỘNG", state="normal", fg_color="#10b981")
+                    self.btn_run.configure(text="Bắt đầu xử lý   →", state="normal", fg_color="#2563eb")
+                    self.lbl_status.configure(text="Xử lý thất bại · Xem chi tiết lỗi", text_color="#fda4af")
+                    self.lbl_session_status.configure(text="●  Lỗi xử lý", fg_color="#3b1e29", text_color="#fda4af")
                     messagebox.showerror("Lỗi xử lý", f"Đã xảy ra lỗi trong quá trình thực hiện:\n\n{err}")
 
                 self.after(0, on_error)

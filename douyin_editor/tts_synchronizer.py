@@ -21,7 +21,7 @@ import requests
 from tqdm import tqdm
 
 from capcut_tts_api import CapCutClient
-from config import PipelineConfig, TTSConfig, VOICE_PRESETS
+from config import PipelineConfig, TTSConfig, VOICE_PRESETS, get_voice_preset
 from transcriber import SubtitleItem
 
 from concurrent.futures import ThreadPoolExecutor
@@ -172,6 +172,13 @@ class CapCutTTSEngine:
         return [(t, None, 0) for t in texts]
 
 
+def create_tts_engine(voice: str):
+    if get_voice_preset(voice).get("provider") == "openvoice":
+        from voice_clone import JapaneseCloneTTSEngine
+        return JapaneseCloneTTSEngine()
+    return CapCutTTSEngine()
+
+
 class VietnameseTTSSynchronizer:
     """
     Module đọc phụ đề tiếng Việt bằng CapCut TTS chính chủ và đồng bộ chính xác vào timeline video.
@@ -182,7 +189,7 @@ class VietnameseTTSSynchronizer:
     def __init__(self, config: PipelineConfig):
         self.config = config
         self.tts_config: TTSConfig = config.tts_config
-        self.engine = CapCutTTSEngine()
+        self.engine = create_tts_engine(self.tts_config.voice)
 
     @staticmethod
     def _clean_text(text: str) -> str:
@@ -201,6 +208,19 @@ class VietnameseTTSSynchronizer:
         text = re.sub(r"[*#_~`]", "", text).strip()
         if not text:
             return []
+
+        # Japanese has no spaces between words. Split at native punctuation,
+        # then cap each phrase's character count for subtitle readability.
+        if re.search(r"[\u3040-\u30ff\u4e00-\u9fff]", text):
+            phrases = []
+            for match in re.finditer(r"[^、。！？!?\n]+[、。！？!?]?", text):
+                clause = match.group().strip()
+                while len(clause) > max_chars:
+                    phrases.append(clause[:max_chars])
+                    clause = clause[max_chars:]
+                if clause:
+                    phrases.append(clause)
+            return phrases
 
         # Tách theo các dấu câu tự nhiên
         raw_clauses = re.split(r"([.,!?;:\n—–]+)", text)
@@ -268,7 +288,7 @@ class VietnameseTTSSynchronizer:
         output_audio_path.parent.mkdir(parents=True, exist_ok=True)
 
         total_ms = int(total_duration_seconds * 1000) + 1500
-        logger.info(f"[Bước 5] Đang sinh giọng đọc CapCut ({self.tts_config.voice}) & đồng bộ phụ đề từng câu...")
+        logger.info(f"[Bước 5] Đang sinh giọng đọc ({self.tts_config.voice}) & đồng bộ phụ đề từng câu...")
 
         master_track = AudioSegment.silent(duration=total_ms)
 
@@ -294,7 +314,7 @@ class VietnameseTTSSynchronizer:
         batch_size = 12
         audio_cache: Dict[Tuple[int, int], AudioSegment] = {}
 
-        with tqdm(total=len(all_phrases_flat), desc="[Bước 5.1] CapCut TTS Từng Câu", leave=False) as pbar:
+        with tqdm(total=len(all_phrases_flat), desc="[Bước 5.1] TTS Từng Câu", leave=False) as pbar:
             for b_start in range(0, len(all_phrases_flat), batch_size):
                 b_texts = all_phrases_flat[b_start : b_start + batch_size]
                 b_maps = phrase_map[b_start : b_start + batch_size]

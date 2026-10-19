@@ -48,11 +48,13 @@ output/
 outputs/
 workspace_temp/
 temp/
+state/
 **/downloads/
 **/output/
 **/outputs/
 **/workspace_temp/
 **/temp/
+**/state/
 
 # Bỏ qua các file media sinh ra trong quá trình download/render/tách nhạc
 *.mp4
@@ -64,6 +66,11 @@ temp/
 *.wav
 *.flac
 *.m4a
+*.aac
+*.opus
+*.ogg
+*.aiff
+*.aif
 *.srt
 
 # Giữ lại các file audio mẫu sẵn có
@@ -79,6 +86,15 @@ temp/
 /test_*.wav
 /test_*.srt
 /test_*.mp4
+
+# File tạm quá trình tải (Partial downloads / browser temp)
+*.part
+*.download
+*.download.*
+*.crdownload
+*.tmp
+*.temp
+*.bak
 
 # ==============================================================================
 # TTS Voice Clone, Vendor & Reference Data
@@ -102,6 +118,8 @@ cookie.txt
 *.cookies
 .douyin_editor_config.json
 device.json
+settings.json
+*.local.json
 
 # ==============================================================================
 # Model Weights & AI Caches (Whisper, Demucs, MDX-Net, OpenVoice, etc.)

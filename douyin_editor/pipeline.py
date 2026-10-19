@@ -13,7 +13,7 @@ from rich.panel import Panel
 from rich.table import Table
 from tqdm import tqdm
 
-from config import BlurRegion, CookieConfig, PipelineConfig
+from config import BlurRegion, CookieConfig, PipelineConfig, get_tts_language, get_target_language
 from downloader import DouyinDownloader
 from preprocessor import VideoPreprocessor
 from transcriber import WhisperTranscriber
@@ -36,6 +36,8 @@ class DouyinAutoPipeline:
 
     def __init__(self, config: PipelineConfig):
         self.config = config
+        if get_target_language(config) != get_tts_language(config.tts_config.voice):
+            raise ValueError("Ngôn ngữ giọng đọc phải khớp với ngôn ngữ bản dịch.")
         self.config.setup_directories()
 
         # Khởi tạo các module chuyên biệt (OOP Architecture)
@@ -57,14 +59,14 @@ class DouyinAutoPipeline:
         table.add_column("Thuộc tính", style="cyan", width=25)
         table.add_column("Cấu hình thiết lập", style="green")
 
-        table.add_row("Douyin Input", input_url[:60] + ("..." if len(input_url) > 60 else ""))
+        table.add_row("Video Input", input_url[:60] + ("..." if len(input_url) > 60 else ""))
         table.add_row("Tốc độ video (Speed)", f"{self.config.speed_factor}x (Chậm 30%)")
         table.add_row("Vùng mờ Sub gốc (Blur)", f"Y: {self.config.blur_region.y_ratio*100:.0f}% | Height: {self.config.blur_region.height_ratio*100:.0f}%")
         table.add_row("Whisper Model", f"{self.config.whisper_model_size} (Lang: {self.config.whisper_language})")
         ai_provider_name = "DeepSeek AI" if getattr(self.config, "llm_provider", "deepseek") == "deepseek" else "Google Gemini"
         ai_model_name = getattr(self.config, "deepseek_model_name", "deepseek-v4-flash") if getattr(self.config, "llm_provider", "deepseek") == "deepseek" else self.config.gemini_model_name
         table.add_row("AI Dịch thuật", f"{ai_provider_name} ({ai_model_name})")
-        table.add_row("Giọng đọc tiếng Việt (TTS)", self.config.tts_config.voice)
+        table.add_row("Giọng đọc (TTS)", self.config.tts_config.preset_name or self.config.tts_config.voice)
         table.add_row("Font chữ Hardsub", f"{self.config.subtitle_style.font_name} (Size: {self.config.subtitle_style.font_size}px)")
         vocal_info = f"Bật ({getattr(self.config, 'vocal_model_name', 'MDX-Net')} | {getattr(self.config, 'vocal_speed', 'turbo').upper()})" if self.config.keep_bgm else "Tắt (Mute)"
         table.add_row("Tách giọng gốc / BGM", vocal_info)
@@ -98,14 +100,19 @@ class DouyinAutoPipeline:
             # ==========================================
             # BƯỚC 1: TẢI VIDEO TỪ DOUYIN
             # ==========================================
-            notify(1, "Bước 1: Tải video Douyin", "Đang phân tích link và tải video chất lượng cao...")
-            console.print("\n[bold cyan]▶ BƯỚC 1: Đang tải video từ Douyin (Multi-Engine Auto-Fallback)...[/bold cyan]")
+            source = self.downloader.detect_source(self.downloader.extract_url(douyin_url_or_text))
+            source_name = "YouTube" if source == "youtube" else "Douyin"
+            notify(1, f"Bước 1: Tải video {source_name}", "Đang phân tích link và tải video chất lượng cao...")
+            console.print(f"\n[bold cyan]▶ BƯỚC 1: Đang tải video từ {source_name}...[/bold cyan]")
             raw_video = self.downloader.download(
                 douyin_url_or_text,
                 custom_filename=custom_name,
-                progress_callback=lambda p, msg: notify(1, "Bước 1: Tải video Douyin", msg)
+                progress_callback=lambda p, msg: notify(1, f"Bước 1: Tải video {source_name}", msg)
             )
             video_id = raw_video.stem
+            target_language = get_target_language(self.config)
+            source_language_name = "Anh" if self.config.whisper_language == "en" else "Trung"
+            language_name = "Nhật" if target_language == "ja" else "Việt"
             overall_pbar.update(1)
 
             # Người dùng tự chọn vùng làm mờ phụ đề trên video vừa tải (nếu bật)
@@ -124,12 +131,12 @@ class DouyinAutoPipeline:
             slowed_blurred_video = session_work_dir / f"{video_id}_slowed_blurred.mp4"
             extracted_audio = session_work_dir / f"{video_id}_slowed_audio.wav"
             original_srt = session_work_dir / "original_subtitles.srt"
-            raw_vietnamese_srt = session_work_dir / "vietnamese_raw_subtitles.srt"
-            synced_vietnamese_srt = session_work_dir / "vietnamese_synced_subtitles.srt"
+            raw_vietnamese_srt = session_work_dir / f"{target_language}_raw_subtitles.srt"
+            synced_vietnamese_srt = session_work_dir / f"{target_language}_synced_subtitles.srt"
             hardsub_video = session_work_dir / f"{video_id}_hardsub.mp4"
             bgm_audio = session_work_dir / f"{video_id}_bgm_track.wav"
             tts_synced_audio = session_work_dir / f"{video_id}_tts_synced.wav"
-            final_output_video = self.config.output_dir / f"output_{video_id}_vi.mp4"
+            final_output_video = self.config.output_dir / f"output_{video_id}_{target_language}.mp4"
 
             # ==========================================
             # BƯỚC 2: TRÍCH XUẤT AUDIO SIÊU TỐC & WHISPER AI (KHÔNG RENDER VIDEO)
@@ -145,8 +152,8 @@ class DouyinAutoPipeline:
                 output_audio=extracted_audio
             )
 
-            notify(2, "Bước 2: Whisper Speech-to-Text", "Đang nhận diện giọng nói tiếng Trung sang file phụ đề SRT...")
-            console.print("[bold cyan]▶ BƯỚC 2 (tiếp): Whisper AI nhận diện giọng nói tiếng Trung -> SRT...[/bold cyan]")
+            notify(2, "Bước 2: Whisper Speech-to-Text", f"Đang nhận diện giọng nói tiếng {source_language_name} sang file phụ đề SRT...")
+            console.print(f"[bold cyan]▶ BƯỚC 2 (tiếp): Nhận diện giọng nói tiếng {source_language_name} -> SRT...[/bold cyan]")
             self.transcriber.transcribe(
                 audio_path=extracted_audio,
                 output_srt=original_srt
@@ -157,8 +164,8 @@ class DouyinAutoPipeline:
             # BƯỚC 3: DỊCH THUẬT VỚI AI (DEEPSEEK / GEMINI)
             # ==========================================
             prov_name = "DeepSeek" if getattr(self.config, "llm_provider", "deepseek") == "deepseek" else "Gemini"
-            notify(3, f"Bước 3: Dịch thuật {prov_name}", "Đang dịch phụ đề Trung -> Việt giữ nguyên timeline...")
-            console.print(f"[bold cyan]▶ BƯỚC 3: Dịch phụ đề sang Tiếng Việt bằng {prov_name} API ({self.translator.model_name})...[/bold cyan]")
+            notify(3, f"Bước 3: Dịch thuật {prov_name}", f"Đang dịch phụ đề {source_language_name} -> {language_name} giữ nguyên timeline...")
+            console.print(f"[bold cyan]▶ BƯỚC 3: Dịch phụ đề sang Tiếng {language_name} bằng {prov_name} API ({self.translator.model_name})...[/bold cyan]")
             raw_vn_subtitles = self.translator.translate_srt(
                 input_srt_path=original_srt,
                 output_srt_path=raw_vietnamese_srt
@@ -180,8 +187,8 @@ class DouyinAutoPipeline:
             # ==========================================
             # BƯỚC 5: CAPCUT TTS & ĐỒNG BỘ PHỤ ĐỀ TỪNG CÂU KHỚP GIỌNG NÓI
             # ==========================================
-            notify(5, "Bước 5: CapCut TTS & Đồng bộ phụ đề", f"Đang đọc giọng {self.config.tts_config.preset_name or self.config.tts_config.voice} và căn khớp từng câu...")
-            console.print(f"[bold cyan]▶ BƯỚC 5: Đọc phụ đề tiếng Việt bằng CapCut TTS ({self.config.tts_config.preset_name}) & đồng bộ timeline từng câu ngắn...[/bold cyan]")
+            notify(5, "Bước 5: TTS & Đồng bộ phụ đề", f"Đang đọc giọng {self.config.tts_config.preset_name or self.config.tts_config.voice} và căn khớp từng câu...")
+            console.print(f"[bold cyan]▶ BƯỚC 5: Đọc phụ đề tiếng {language_name} ({self.config.tts_config.preset_name}) & đồng bộ timeline từng câu ngắn...[/bold cyan]")
             tts_synced_audio, synced_vn_subtitles = self.tts_syncer.generate_and_sync(
                 subtitles=raw_vn_subtitles,
                 total_duration_seconds=total_duration,
