@@ -63,8 +63,8 @@ class DouyinAutoPipeline:
         table.add_row("Tốc độ video (Speed)", f"{self.config.speed_factor}x (Chậm 30%)")
         table.add_row("Vùng mờ Sub gốc (Blur)", f"Y: {self.config.blur_region.y_ratio*100:.0f}% | Height: {self.config.blur_region.height_ratio*100:.0f}%")
         table.add_row("Whisper Model", f"{self.config.whisper_model_size} (Lang: {self.config.whisper_language})")
-        ai_provider_name = "DeepSeek AI" if getattr(self.config, "llm_provider", "deepseek") == "deepseek" else "Google Gemini"
-        ai_model_name = getattr(self.config, "deepseek_model_name", "deepseek-v4-flash") if getattr(self.config, "llm_provider", "deepseek") == "deepseek" else self.config.gemini_model_name
+        ai_provider_name = {"deepseek": "DeepSeek AI", "gemini": "Gemini API", "gemini_web": "Gemini Cookie"}.get(self.config.llm_provider, "AI")
+        ai_model_name = self.translator.model_name
         table.add_row("AI Dịch thuật", f"{ai_provider_name} ({ai_model_name})")
         table.add_row("Giọng đọc (TTS)", self.config.tts_config.preset_name or self.config.tts_config.voice)
         table.add_row("Font chữ Hardsub", f"{self.config.subtitle_style.font_name} (Size: {self.config.subtitle_style.font_size}px)")
@@ -163,7 +163,7 @@ class DouyinAutoPipeline:
             # ==========================================
             # BƯỚC 3: DỊCH THUẬT VỚI AI (DEEPSEEK / GEMINI)
             # ==========================================
-            prov_name = "DeepSeek" if getattr(self.config, "llm_provider", "deepseek") == "deepseek" else "Gemini"
+            prov_name = {"deepseek": "DeepSeek", "gemini": "Gemini API", "gemini_web": "Gemini Cookie"}.get(self.config.llm_provider, "AI")
             notify(3, f"Bước 3: Dịch thuật {prov_name}", f"Đang dịch phụ đề {source_language_name} -> {language_name} giữ nguyên timeline...")
             console.print(f"[bold cyan]▶ BƯỚC 3: Dịch phụ đề sang Tiếng {language_name} bằng {prov_name} API ({self.translator.model_name})...[/bold cyan]")
             raw_vn_subtitles = self.translator.translate_srt(

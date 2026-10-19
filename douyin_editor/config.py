@@ -473,7 +473,10 @@ class PipelineConfig:
     Cấu hình toàn bộ quy trình tự động hóa
     """
     # API & AI Models (DeepSeek / Gemini)
-    llm_provider: str = "deepseek"  # "deepseek" hoặc "gemini"
+    llm_provider: str = "deepseek"  # deepseek, gemini (API), gemini_web (cookie)
+    gemini_web_psid: str = field(default="", repr=False)
+    gemini_web_psidts: str = field(default="", repr=False)
+    gemini_web_request_interval: float = 4.0
     deepseek_api_key: str = field(default_factory=lambda: os.getenv("DEEPSEEK_API_KEY", "sk-7731fa779b8a46fda7e9e48c46bce715"))
     deepseek_model_name: str = "deepseek-v4-flash"
     deepseek_base_url: str = "https://api.deepseek.com"

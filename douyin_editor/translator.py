@@ -709,6 +709,9 @@ def create_translator(config: PipelineConfig):
         return DeepSeekTranslator(config)
     elif provider == "gemini":
         return GeminiTranslator(config)
+    elif provider == "gemini_web":
+        from gemini_cookie import GeminiCookieTranslator
+        return GeminiCookieTranslator(config)
     else:
         # Fallback to DeepSeek if key exists, else Gemini
         if getattr(config, "deepseek_api_key", ""):

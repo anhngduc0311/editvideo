@@ -76,6 +76,9 @@ class DouyinEditorApp(ctk.CTk):
         self.saved_deepseek_model = "deepseek-v4-flash"
         self.saved_gemini_key = os.getenv("GEMINI_API_KEY", "")
         self.saved_gemini_model = "gemini-3.6-flash"
+        self.saved_gemini_psid = os.getenv("GEMINI_1PSID", "")
+        self.saved_gemini_psidts = os.getenv("GEMINI_1PSIDTS", "")
+        self._active_provider = None
         self.saved_keep_bgm = False
         self.saved_vocal_model = "MDX-Net Inst HQ 3 (Chuẩn - Khuyên dùng cho Nhạc Nền)"
         self.saved_vocal_speed = "⚡ Siêu Tốc (Turbo 0% Overlap - ~2.5x real-time)"
@@ -103,13 +106,8 @@ class DouyinEditorApp(ctk.CTk):
     def _save_settings(self):
         """Lưu cài đặt vào file JSON trong thư mục User"""
         try:
-            cur_provider = "deepseek" if hasattr(self, "seg_provider") and "DeepSeek" in self.seg_provider.get() else "gemini"
-            if cur_provider == "deepseek":
-                self.saved_deepseek_key = self.key_entry.get().strip() if hasattr(self, "key_entry") else self.saved_deepseek_key
-                self.saved_deepseek_model = self.cmb_ai_model.get().strip() if hasattr(self, "cmb_ai_model") else self.saved_deepseek_model
-            else:
-                self.saved_gemini_key = self.key_entry.get().strip() if hasattr(self, "key_entry") else self.saved_gemini_key
-                self.saved_gemini_model = self.cmb_ai_model.get().strip() if hasattr(self, "cmb_ai_model") else self.saved_gemini_model
+            cur_provider = self._selected_provider()
+            self._capture_provider_inputs()
 
             data = {
                 "llm_provider": cur_provider,
@@ -297,16 +295,13 @@ class DouyinEditorApp(ctk.CTk):
         # Provider Selector Segmented Button
         self.seg_provider = ctk.CTkSegmentedButton(
             key_card,
-            values=["🤖 DeepSeek AI (Khuyên dùng)", "✨ Google Gemini AI"],
+            values=["DeepSeek API", "Gemini API", "Gemini Cookie"],
             command=self._on_provider_changed,
             selected_color="#2563eb",
             selected_hover_color="#1d4ed8"
         )
         self.seg_provider.pack(fill="x", padx=12, pady=(2, 6))
-        if getattr(self, "saved_llm_provider", "deepseek") == "gemini":
-            self.seg_provider.set("✨ Google Gemini AI")
-        else:
-            self.seg_provider.set("🤖 DeepSeek AI (Khuyên dùng)")
+        self.seg_provider.set({"deepseek": "DeepSeek API", "gemini": "Gemini API", "gemini_web": "Gemini Cookie"}.get(self.saved_llm_provider, "DeepSeek API"))
 
         self.lbl_key_title = ctk.CTkLabel(
             key_card,
@@ -339,6 +334,14 @@ class DouyinEditorApp(ctk.CTk):
         )
         self.btn_get_key.grid(row=0, column=2)
 
+        self.cookie_ts_row = ctk.CTkFrame(key_card, fg_color="transparent")
+        self.cookie_ts_row.pack(fill="x", padx=12, pady=(0, 6))
+        ctk.CTkLabel(self.cookie_ts_row, text="__Secure-1PSIDTS (nếu có)", anchor="w").pack(fill="x")
+        self.gemini_psidts_entry = ctk.CTkEntry(self.cookie_ts_row, show="•", placeholder_text="Cookie bổ sung của phiên Gemini")
+        self.gemini_psidts_entry.pack(fill="x", pady=(2, 6))
+        ctk.CTkButton(self.cookie_ts_row, text="Hướng dẫn lấy cookie", width=160,
+                      command=self._show_gemini_cookie_help).pack(anchor="w")
+
         # Model Selector & Test Row
         model_row = ctk.CTkFrame(key_card, fg_color="transparent")
         model_row.pack(fill="x", padx=12, pady=(0, 6))
@@ -364,7 +367,7 @@ class DouyinEditorApp(ctk.CTk):
         self.cmb_ai_model.pack(side="left", padx=(0, 8))
 
         self.btn_check_key = ctk.CTkButton(
-            model_row, text="⚡ Test API & Limit", width=140, height=28,
+            model_row, text="Kiểm tra kết nối", width=140, height=28,
             command=self._check_api_key_clicked,
             fg_color="#0284c7", hover_color="#0369a1"
         )
@@ -826,6 +829,7 @@ class DouyinEditorApp(ctk.CTk):
         )
         self.btn_play_video.grid(row=0, column=2, sticky="ew", padx=(8, 12), pady=10)
         self._polish_settings(pages)
+        self._on_provider_changed(self.seg_provider.get())
         self._on_translation_changed(self.cmb_translation_mode.get())
         self._update_sub_preview_banner()
         self._append_log("Dán link video, chọn cài đặt và bấm Bắt đầu xử lý.", "STUDIO")
@@ -920,9 +924,11 @@ class DouyinEditorApp(ctk.CTk):
     def _toggle_key_visibility(self):
         if self.key_entry.cget("show") == "•":
             self.key_entry.configure(show="")
+            self.gemini_psidts_entry.configure(show="")
             self.btn_toggle_key.configure(text="🔒")
         else:
             self.key_entry.configure(show="•")
+            self.gemini_psidts_entry.configure(show="•")
             self.btn_toggle_key.configure(text="👁")
 
     def _on_voice_changed(self, chosen):
@@ -1053,11 +1059,65 @@ class DouyinEditorApp(ctk.CTk):
         choice = self.seg_provider.get()
         if "DeepSeek" in choice:
             webbrowser.open("https://platform.deepseek.com/api_keys")
+        elif "Cookie" in choice:
+            webbrowser.open("https://gemini.google.com/")
         else:
             webbrowser.open("https://aistudio.google.com/app/apikey")
 
+    def _selected_provider(self):
+        choice = self.seg_provider.get()
+        return "gemini_web" if "Cookie" in choice else ("deepseek" if "DeepSeek" in choice else "gemini")
+
+    def _capture_provider_inputs(self):
+        provider = self._active_provider
+        if provider == "deepseek":
+            self.saved_deepseek_key = self.key_entry.get().strip()
+            self.saved_deepseek_model = self.cmb_ai_model.get().strip()
+        elif provider == "gemini":
+            self.saved_gemini_key = self.key_entry.get().strip()
+            self.saved_gemini_model = self.cmb_ai_model.get().strip()
+        elif provider == "gemini_web":
+            # Keep session credentials in memory; never put them in settings JSON.
+            self.saved_gemini_psid = self.key_entry.get().strip()
+            self.saved_gemini_psidts = self.gemini_psidts_entry.get().strip()
+
+    def _show_gemini_cookie_help(self):
+        messagebox.showinfo("Đăng nhập Gemini bằng cookie", (
+            "1. Mở gemini.google.com và đăng nhập tài khoản của bạn.\n"
+            "2. Nhấn F12 → Application/Storage → Cookies → chọn miền Google/Gemini.\n"
+            "3. Sao chép giá trị __Secure-1PSID vào ô đầu.\n"
+            "4. Nếu có __Secure-1PSIDTS, sao chép vào ô thứ hai.\n"
+            "5. Bấm Kiểm tra kết nối. Không cần API key trong chế độ này.\n\n"
+            "Cookie được giữ trong bộ nhớ ứng dụng, không ghi vào file cài đặt. "
+            "Thư viện có thể lưu cache phiên trên máy. Không chia sẻ cookie với người khác.\n\n"
+            "Đây là kết nối Gemini Web không chính thức. Cookie có thể hết hạn; "
+            "giới hạn tài khoản, CAPTCHA hoặc chặn tạm thời vẫn có thể xảy ra."
+        ))
+
     def _on_provider_changed(self, choice: str):
-        """Chuyển đổi giữa DeepSeek AI và Google Gemini"""
+        """Switch credentials without mixing API keys and web-session cookies."""
+        self._capture_provider_inputs()
+        provider = self._selected_provider()
+        self._active_provider = provider
+        self.key_entry.delete(0, "end")
+        self.key_entry.configure(show="•")
+        self.gemini_psidts_entry.configure(show="•")
+        self.cmb_ai_model.configure(state="normal")
+        self.cookie_ts_row.pack_forget()
+        self.btn_get_key.configure(text="Lấy Key")
+        if provider == "gemini_web":
+            self.lbl_key_title.configure(text="Cookie Gemini · __Secure-1PSID")
+            self.lbl_model_title.configure(text="Model Gemini Web:")
+            self.key_entry.insert(0, self.saved_gemini_psid)
+            self.gemini_psidts_entry.delete(0, "end")
+            self.gemini_psidts_entry.insert(0, self.saved_gemini_psidts)
+            self.cookie_ts_row.pack(fill="x", padx=12, pady=(0, 6), before=self.lbl_model_title.master)
+            self.btn_get_key.configure(text="Gemini")
+            self.cmb_ai_model.configure(values=["Tự động"])
+            self.cmb_ai_model.set("Tự động")
+            self.cmb_ai_model.configure(state="readonly")
+            self.lbl_api_status.configure(text="Không cần API key · Cookie không ghi vào cài đặt. Phiên vẫn chịu giới hạn của Gemini.", text_color="#94a3b8")
+            return
         if "DeepSeek" in choice:
             self.lbl_key_title.configure(text="🔑 DeepSeek API Key:")
             self.lbl_model_title.configure(text="Model DeepSeek:")
@@ -1077,12 +1137,15 @@ class DouyinEditorApp(ctk.CTk):
             self.cmb_ai_model.configure(values=["gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-flash-latest"])
             self.cmb_ai_model.set(getattr(self, "saved_gemini_model", "gemini-3.5-flash-lite"))
             self.lbl_api_status.configure(
-                text="Google Gemini: Miễn phí, tốc độ cao với các model Gemini Flash.",
+                text="Google Gemini API · Dùng API key và hạn mức của dự án Google AI Studio.",
                 text_color="#38bdf8"
             )
 
     def _check_api_key_clicked(self):
         """Xử lý kiểm tra API Key và hạn ngạch Rate Limit cho provider đang chọn"""
+        if self._selected_provider() == "gemini_web":
+            self._check_gemini_cookie_clicked()
+            return
         choice = self.seg_provider.get()
         is_deepseek = "DeepSeek" in choice
         provider_name = "DeepSeek" if is_deepseek else "Google Gemini"
@@ -1112,7 +1175,7 @@ class DouyinEditorApp(ctk.CTk):
                     res = check_gemini_api_status(key, model)
 
                 def _update_ui():
-                    self.btn_check_key.configure(state="normal", text="⚡ Test API & Limit")
+                    self.btn_check_key.configure(state="normal", text="Kiểm tra kết nối")
                     status = res.get("status", "")
                     msg = res.get("message", "")
                     rec_model = res.get("recommended_model", "")
@@ -1135,12 +1198,36 @@ class DouyinEditorApp(ctk.CTk):
 
                 self.after(0, _update_ui)
             except Exception as e:
-                def _err():
-                    self.btn_check_key.configure(state="normal", text="⚡ Test API & Limit")
-                    self.lbl_api_status.configure(text=f"❌ Lỗi khi kiểm tra: {e}", text_color="#f87171")
+                def _err(error=str(e)):
+                    self.btn_check_key.configure(state="normal", text="Kiểm tra kết nối")
+                    self.lbl_api_status.configure(text=f"❌ Lỗi khi kiểm tra: {error}", text_color="#f87171")
                 self.after(0, _err)
 
         threading.Thread(target=_worker, daemon=True).start()
+
+    def _check_gemini_cookie_clicked(self):
+        from gemini_cookie import GeminiCookieTranslator, GeminiCookieError
+        try:
+            translator = GeminiCookieTranslator(PipelineConfig(
+                gemini_web_psid=self.key_entry.get(),
+                gemini_web_psidts=self.gemini_psidts_entry.get(),
+            ))
+        except GeminiCookieError as exc:
+            self.lbl_api_status.configure(text=str(exc), text_color="#fbbf24")
+            return
+        self.btn_check_key.configure(state="disabled", text="Đang kiểm tra…")
+        self.lbl_api_status.configure(text="Đang xác thực phiên Gemini…", text_color="#60a5fa")
+
+        def worker():
+            result = translator.check_status()
+            def finish():
+                self.btn_check_key.configure(state="normal", text="Kiểm tra kết nối")
+                if self._selected_provider() == "gemini_web":
+                    self.lbl_api_status.configure(text=result["message"], text_color="#6ee7b7" if result["status"] == "OK" else "#fda4af")
+                self._append_log(result["message"], "GEMINI")
+            self.after(0, finish)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _on_speed_changed(self, val: float):
         self.lbl_speed_val.configure(text=f"{val:.2f}x (Chậm {int((1-val)*100)}%)")
@@ -1275,9 +1362,17 @@ class DouyinEditorApp(ctk.CTk):
             messagebox.showwarning("Cảnh báo", "Vui lòng nhập đường link video Douyin hoặc YouTube!")
             return
 
-        cur_provider = "deepseek" if "DeepSeek" in self.seg_provider.get() else "gemini"
+        cur_provider = self._selected_provider()
         api_key = self.key_entry.get().strip()
-        if not api_key:
+        cookie_psid = cookie_psidts = ""
+        if cur_provider == "gemini_web":
+            from gemini_cookie import parse_gemini_cookies, GeminiCookieError
+            try:
+                cookie_psid, cookie_psidts = parse_gemini_cookies(api_key, self.gemini_psidts_entry.get())
+            except GeminiCookieError as exc:
+                messagebox.showwarning("Cookie Gemini", str(exc))
+                return
+        elif not api_key:
             messagebox.showwarning("Cảnh báo", f"Vui lòng nhập API Key cho {cur_provider.upper()}!")
             return
 
@@ -1355,6 +1450,8 @@ class DouyinEditorApp(ctk.CTk):
             whisper_language=TRANSLATION_MODES[self.cmb_translation_mode.get()][0],
             target_language=TRANSLATION_MODES[self.cmb_translation_mode.get()][1],
             llm_provider=cur_provider,
+            gemini_web_psid=cookie_psid,
+            gemini_web_psidts=cookie_psidts,
             deepseek_api_key=api_key if cur_provider == "deepseek" else self.saved_deepseek_key,
             deepseek_model_name=self.cmb_ai_model.get().strip() if cur_provider == "deepseek" else self.saved_deepseek_model,
             gemini_api_key=api_key if cur_provider == "gemini" else self.saved_gemini_key,

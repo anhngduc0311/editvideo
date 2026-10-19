@@ -20,6 +20,7 @@ onnxruntime>=1.15.0
 SpeechRecognition>=3.10.0
 openai-whisper>=20231117
 google-generativeai>=0.8.0
+gemini-webapi>=2.1.1,<3
 
 # AI Text-to-Speech (CapCut Native Neural Voices)
 capcut-tts-api @ git+https://github.com/K07VN/capcut-tts-api.git

@@ -63,6 +63,41 @@ with tempfile.TemporaryDirectory() as directory:
             app._load_saved_settings()
             assert app.saved_translation_mode == mode
             assert app_gui.get_tts_language(app.saved_voice) == "ja"
+            app.seg_provider.set("Gemini Cookie")
+            app._on_provider_changed("Gemini Cookie")
+            app.update()
+            assert app.cookie_ts_row.winfo_manager() == "pack"
+            assert app.key_entry.cget("show") == "•"
+            app.key_entry.delete(0, "end")
+            app.key_entry.insert(0, "__Secure-1PSID=private-psid; __Secure-1PSIDTS=private-psidts")
+            app._save_settings()
+            saved = app_gui.CONFIG_FILE.read_text(encoding="utf-8")
+            assert '"llm_provider": "gemini_web"' in saved
+            assert "private-psid" not in saved
+            app.seg_provider.set("Gemini API")
+            app._on_provider_changed("Gemini API")
+            assert app.cookie_ts_row.winfo_manager() == ""
+            assert "private-psid" not in app.key_entry.get()
+            app.seg_provider.set("Gemini Cookie")
+            app._on_provider_changed("Gemini Cookie")
+            assert "private-psid" in app.key_entry.get()
+            with patch.object(app_gui, "DouyinAutoPipeline") as factory, patch.object(app_gui.threading, "Thread") as thread, patch.object(app_gui.messagebox, "showinfo"):
+                factory.return_value.run.return_value = Path(directory) / "output_cookie_ja.mp4"
+                thread.side_effect = lambda target, daemon: Mock(start=target)
+                app._start_pipeline()
+                app.update()
+                config = factory.call_args.kwargs["config"]
+                assert config.llm_provider == "gemini_web"
+                assert config.gemini_web_psid == "private-psid"
+                assert config.gemini_web_psidts == "private-psidts"
+                assert config.whisper_language == "en" and config.target_language == "ja"
+                assert "private-psid" not in app.log_textbox.get("1.0", "end")
+            with patch("gemini_cookie.GeminiCookieTranslator.check_status", return_value={"status": "ERROR", "message": "Session expired"}), patch.object(app_gui.threading, "Thread") as thread:
+                thread.side_effect = lambda target, daemon: Mock(start=target)
+                app._check_api_key_clicked()
+                app.update()
+                assert app.lbl_api_status.cget("text") == "Session expired"
+                assert app.btn_check_key.cget("state") == "normal"
             print("PASS: layouts and progress states")
         finally:
             app.destroy()
