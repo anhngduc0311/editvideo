@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
@@ -15,11 +16,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config import PipelineConfig, SubtitleStyle
 from subtitle_burner import SubtitleBurner
 from subtitle_layout import positioned_subtitles
+from subtitle_positioner import SubtitlePositionDialog
+from translator import parse_srt_string
 
 SRT = "1\n00:00:00,000 --> 00:00:01,000\nHELLO\n\n2\n00:00:01,000 --> 00:00:02,000\nNEXT\n"
 
 
 class SubtitlePositionTests(unittest.TestCase):
+    def test_cue_boundaries_and_source_speed_mapping(self):
+        items = parse_srt_string(SRT)
+        for speed in (0.5, 0.7, 1.0):
+            for subtitle_time, expected in ((0, "HELLO"), (0.9, "HELLO"), (1, "NEXT"), (1.9, "NEXT"), (2, "")):
+                with self.subTest(speed=speed, time=subtitle_time):
+                    state = SimpleNamespace(items=items, seek_time=subtitle_time * speed, speed_factor=speed)
+                    active = SubtitlePositionDialog._active_cues(state)
+                    self.assertEqual("\n".join(item.text for _, item in active), expected)
+
     def test_default_layout_keeps_original_srt(self):
         with patch("subtitle_layout.subprocess.run") as run:
             self.assertEqual(positioned_subtitles(Path("original.srt"), SubtitleStyle(), Path("new.ass")), Path("original.srt"))

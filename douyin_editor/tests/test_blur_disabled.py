@@ -41,18 +41,21 @@ class BlurDisabledTests(unittest.TestCase):
                 pipeline.separator = Mock()
                 pipeline.separator.process.return_value = None
                 pipeline.tts_syncer = Mock()
-                pipeline.tts_syncer.generate_and_sync.return_value = (root / "tts.wav", ["synced"])
+                def sync(**kwargs):
+                    kwargs["output_srt_path"].write_text("1\n00:00:00,000 --> 00:00:01,000\nActual synced translation\n", encoding="utf-8")
+                    return root / "tts.wav", ["synced"]
+                pipeline.tts_syncer.generate_and_sync.side_effect = sync
                 pipeline.compositor = Mock()
                 pipeline.compositor.render_single_pass_master.return_value = final
                 callback = Mock(return_value=BlurRegion(enabled=True))
                 chosen = SubtitleStyle(position_x=0.25, position_y=0.4)
                 def place(*args):
-                    pipeline.preprocessor.extract_audio_for_stt.assert_not_called()
-                    pipeline.transcriber.transcribe.assert_not_called()
-                    pipeline.translator.translate_srt.assert_not_called()
-                    pipeline.tts_syncer.generate_and_sync.assert_not_called()
+                    pipeline.preprocessor.extract_audio_for_stt.assert_called_once()
+                    pipeline.transcriber.transcribe.assert_called_once()
+                    pipeline.translator.translate_srt.assert_called_once()
+                    pipeline.tts_syncer.generate_and_sync.assert_called_once()
                     pipeline.compositor.render_single_pass_master.assert_not_called()
-                    self.assertIn("Phụ đề mẫu", args[1].read_text(encoding="utf-8"))
+                    self.assertIn("Actual synced translation", args[1].read_text(encoding="utf-8"))
                     return chosen
                 position_callback = Mock(side_effect=place)
                 result = pipeline.run("https://youtu.be/jNQXAC9IVRw", interactive_roi_callback=callback,

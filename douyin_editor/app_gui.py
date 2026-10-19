@@ -540,7 +540,7 @@ class DouyinEditorApp(ctk.CTk):
         self.slider_blur_h.grid(row=1, column=1, sticky="ew", padx=(6, 0))
 
         self.chk_pause_subtitles = ctk.CTkCheckBox(
-            video_card, text="Dừng sau khi tải để đặt vị trí chữ phụ đề",
+            video_card, text="Dừng sau khi dịch để xem và đặt phụ đề thật",
             variable=self.pause_subtitles_var,
         )
         self.chk_pause_subtitles.pack(anchor="w", padx=12, pady=(6, 12))
@@ -696,7 +696,7 @@ class DouyinEditorApp(ctk.CTk):
 
         ctk.CTkLabel(sub_card, text="Thiết kế phụ đề", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=12, pady=(14, 4))
         self.chk_pause_subtitles_shortcut = ctk.CTkCheckBox(
-            sub_card, text="Dừng sau khi tải để đặt vị trí chữ phụ đề", variable=self.pause_subtitles_var,
+            sub_card, text="Dừng sau khi dịch để xem và đặt phụ đề thật", variable=self.pause_subtitles_var,
         )
         self.chk_pause_subtitles_shortcut.pack(anchor="w", padx=12, pady=(4, 8))
 
