@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from config import BlurRegion, PipelineConfig
+from config import BlurRegion, PipelineConfig, SubtitleStyle
 from pipeline import DouyinAutoPipeline
 from roi_selector import VisualROISelectorDialog
 
@@ -33,6 +33,11 @@ class BlurDisabledTests(unittest.TestCase):
                 pipeline.transcriber = Mock()
                 pipeline.translator = Mock(model_name="test")
                 pipeline.translator.translate_srt.return_value = ["translated"]
+                def translate(**kwargs):
+                    kwargs["output_srt_path"].write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+                    return ["translated"]
+                pipeline.translator.translate_srt.side_effect = translate
+                pipeline.burner = Mock()
                 pipeline.separator = Mock()
                 pipeline.separator.process.return_value = None
                 pipeline.tts_syncer = Mock()
@@ -40,10 +45,24 @@ class BlurDisabledTests(unittest.TestCase):
                 pipeline.compositor = Mock()
                 pipeline.compositor.render_single_pass_master.return_value = final
                 callback = Mock(return_value=BlurRegion(enabled=True))
-                result = pipeline.run("https://youtu.be/jNQXAC9IVRw", interactive_roi_callback=callback)
+                chosen = SubtitleStyle(position_x=0.25, position_y=0.4)
+                def place(*args):
+                    pipeline.preprocessor.extract_audio_for_stt.assert_not_called()
+                    pipeline.transcriber.transcribe.assert_not_called()
+                    pipeline.translator.translate_srt.assert_not_called()
+                    pipeline.tts_syncer.generate_and_sync.assert_not_called()
+                    pipeline.compositor.render_single_pass_master.assert_not_called()
+                    self.assertIn("Phụ đề mẫu", args[1].read_text(encoding="utf-8"))
+                    return chosen
+                position_callback = Mock(side_effect=place)
+                result = pipeline.run("https://youtu.be/jNQXAC9IVRw", interactive_roi_callback=callback,
+                                      subtitle_position_callback=position_callback)
                 self.assertEqual(result, final)
                 self.assertEqual(callback.call_count, int(enabled))
                 self.assertEqual(config.blur_region.enabled, enabled)
+                position_callback.assert_called_once()
+                self.assertIs(config.subtitle_style, chosen)
+                self.assertIs(pipeline.burner.style, chosen)
 
     def test_saving_region_does_not_enable_disabled_blur(self):
         for enabled in (False, True):

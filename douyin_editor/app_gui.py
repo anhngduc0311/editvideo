@@ -23,6 +23,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 from config import BlurRegion, CookieConfig, PipelineConfig, SubtitleStyle, SUBTITLE_PRESETS, TTSConfig, VOICE_PRESETS, TRANSLATION_MODES, STT_MODES, get_tts_language
 from pipeline import DouyinAutoPipeline
 from roi_selector import VisualROISelectorDialog
+from subtitle_positioner import SubtitlePositionDialog
 from cookie_storage import protect_cookies, unprotect_cookies, CookieStorageError
 
 # Thiết lập giao diện CustomTkinter
@@ -68,6 +69,7 @@ class DouyinEditorApp(ctk.CTk):
         self.saved_cookie_file = ""
         self.saved_browser_name = "Edge"
         self._load_saved_settings()
+        self.pause_subtitles_var = tk.IntVar(value=int(self.saved_pause_subtitles))
 
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -90,6 +92,7 @@ class DouyinEditorApp(ctk.CTk):
         self.saved_voice = "🔥 Cô Gái Hoạt Ngôn (CapCut Chính Chủ)"
         self.saved_translation_mode = ""
         self.saved_stt_mode = next(iter(STT_MODES))
+        self.saved_pause_subtitles = True
         if CONFIG_FILE.exists():
             try:
                 data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
@@ -107,6 +110,7 @@ class DouyinEditorApp(ctk.CTk):
                 self.saved_voice = data.get("tts_voice", self.saved_voice)
                 self.saved_translation_mode = data.get("translation_mode", "")
                 self.saved_stt_mode = data.get("stt_mode", self.saved_stt_mode)
+                self.saved_pause_subtitles = bool(data.get("pause_subtitles", True))
                 self.saved_gemini_cookie_protected = data.get("gemini_cookie_protected", "")
                 if self.saved_gemini_cookie_protected:
                     try:
@@ -142,6 +146,7 @@ class DouyinEditorApp(ctk.CTk):
                 "tts_voice": self.cmb_voice.get() if hasattr(self, "cmb_voice") else self.saved_voice,
                 "translation_mode": self.cmb_translation_mode.get() if hasattr(self, "cmb_translation_mode") else self.saved_translation_mode,
                 "stt_mode": self.cmb_stt_mode.get() if hasattr(self, "cmb_stt_mode") else self.saved_stt_mode,
+                "pause_subtitles": bool(self.chk_pause_subtitles.get()) if hasattr(self, "chk_pause_subtitles") else self.saved_pause_subtitles,
             }
             if protected_cookie:
                 data["gemini_cookie_protected"] = protected_cookie
@@ -534,6 +539,12 @@ class DouyinEditorApp(ctk.CTk):
         self.slider_blur_h.set(0.24)
         self.slider_blur_h.grid(row=1, column=1, sticky="ew", padx=(6, 0))
 
+        self.chk_pause_subtitles = ctk.CTkCheckBox(
+            video_card, text="Dừng sau khi tải để đặt vị trí chữ phụ đề",
+            variable=self.pause_subtitles_var,
+        )
+        self.chk_pause_subtitles.pack(anchor="w", padx=12, pady=(6, 12))
+
         # 5. Card TTS & BGM (AI MDX-Net Engine)
         audio_card = ctk.CTkFrame(pages["Âm thanh"], corner_radius=8)
         audio_card.pack(fill="x", padx=5, pady=5)
@@ -684,6 +695,10 @@ class DouyinEditorApp(ctk.CTk):
         sub_card.pack(fill="x", padx=5, pady=5)
 
         ctk.CTkLabel(sub_card, text="Thiết kế phụ đề", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=12, pady=(14, 4))
+        self.chk_pause_subtitles_shortcut = ctk.CTkCheckBox(
+            sub_card, text="Dừng sau khi tải để đặt vị trí chữ phụ đề", variable=self.pause_subtitles_var,
+        )
+        self.chk_pause_subtitles_shortcut.pack(anchor="w", padx=12, pady=(4, 8))
 
         # Grid mẫu chữ kiểu CapCut (6 cột)
         grid_frame = ctk.CTkFrame(sub_card, fg_color="#18181b", corner_radius=8)
@@ -1358,6 +1373,33 @@ class DouyinEditorApp(ctk.CTk):
         )
         return dlg
 
+    def _position_subtitles_hook(self, video_path, srt_path, style, speed_factor):
+        event = threading.Event()
+        result = {"style": None, "error": None}
+
+        def open_dialog():
+            try:
+                self.lbl_session_status.configure(text="●  Chờ đặt phụ đề", fg_color="#172e52", text_color="#93c5fd")
+                def on_apply(chosen):
+                    result["style"] = chosen
+                    self._append_log(f"Đã đặt phụ đề: X={chosen.position_x:.0%}, Y={chosen.position_y:.0%}, cỡ {chosen.font_size}.", "SUBTITLE")
+                    event.set()
+                dialog = SubtitlePositionDialog(
+                    self, video_path, srt_path, copy.copy(style), speed_factor=speed_factor,
+                    on_apply=on_apply, on_skip=event.set,
+                )
+                # Covers the title-bar X, the skip button and external destruction.
+                dialog.bind("<Destroy>", lambda e: event.set() if e.widget is dialog else None, add="+")
+            except Exception:
+                result["error"] = "Không mở được cửa sổ đặt phụ đề. Kiểm tra video và file phụ đề."
+                event.set()
+
+        self.after(0, open_dialog)
+        event.wait()
+        if result["error"]:
+            raise RuntimeError(result["error"])
+        return result["style"]
+
     def _select_subtitle_preset(self, preset_id: str):
         """Xử lý khi người dùng click chọn một mẫu phụ đề CapCut trong Grid"""
         if preset_id not in SUBTITLE_PRESETS:
@@ -1507,6 +1549,7 @@ class DouyinEditorApp(ctk.CTk):
         font_size = int(self.cmb_font_size.get())
         blur_enabled = bool(self.chk_blur.get())
         is_interactive_roi = blur_enabled and bool(self.chk_interactive_roi.get())
+        pause_subtitles = bool(self.chk_pause_subtitles.get())
 
         # Phân tích mô hình và tốc độ tách AI MDX-Net
         vocal_model_raw = self.cmb_vocal_model.get() if hasattr(self, "cmb_vocal_model") else ""
@@ -1620,7 +1663,9 @@ class DouyinEditorApp(ctk.CTk):
                 final_video = pipeline.run(
                     douyin_url_or_text=raw_url,
                     progress_callback=self._update_step_status,
-                    interactive_roi_callback=interactive_roi_hook if is_interactive_roi else None
+                    interactive_roi_callback=interactive_roi_hook if is_interactive_roi else None,
+                    subtitle_position_callback=(lambda video, srt, style: self._position_subtitles_hook(
+                        video, srt, style, config.speed_factor)) if pause_subtitles else None,
                 )
                 self.last_output_video = final_video
 

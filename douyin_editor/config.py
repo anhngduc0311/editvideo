@@ -52,6 +52,8 @@ class SubtitleStyle:
     bold: int = 1                        # In đậm (1 = True, 0 = False)
     alignment: int = 2                   # Căn giữa dưới cùng (ASS standard = 2)
     border_style: int = 1                # 1 = Viền & Đổ bóng, 3 = Hộp chữ nhật (Badge)
+    position_x: Optional[float] = None   # Subtitle center as a fraction of frame width
+    position_y: Optional[float] = None   # Subtitle center as a fraction of frame height
 
 
 SUBTITLE_PRESETS = {

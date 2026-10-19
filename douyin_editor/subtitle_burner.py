@@ -9,6 +9,7 @@ from typing import Callable, Optional
 from tqdm import tqdm
 
 from config import PipelineConfig, SubtitleStyle
+from subtitle_layout import positioned_subtitles
 from preprocessor import run_ffmpeg_with_progress
 
 logger = logging.getLogger(__name__)
@@ -81,7 +82,9 @@ class SubtitleBurner:
             subprocess.run(cmd_copy, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
             return output_video
 
-        escaped_srt = self._escape_ffmpeg_path(srt_file)
+        positioned_file = positioned_subtitles(srt_file, self.style,
+                                               output_video.parent / f"{output_video.stem}_positioned.ass")
+        escaped_srt = self._escape_ffmpeg_path(positioned_file)
         force_style = self.build_force_style_string()
 
         subtitle_filter = f"subtitles='{escaped_srt}':force_style='{force_style}'"

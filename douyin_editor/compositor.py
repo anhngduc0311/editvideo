@@ -11,6 +11,7 @@ from typing import Callable, Optional
 from tqdm import tqdm
 
 from config import PipelineConfig
+from subtitle_layout import positioned_subtitles
 from preprocessor import run_ffmpeg_with_progress
 
 logger = logging.getLogger(__name__)
@@ -192,6 +193,9 @@ class VideoCompositor:
         # Lấy danh sách khoảng thời gian có phụ đề (trên timeline xuất bản)
         sub_intervals = self.parse_srt_intervals(burn_srt_file) if has_subtitles else []
         has_valid_subs = len(sub_intervals) > 0
+        if has_valid_subs:
+            burn_srt_file = positioned_subtitles(burn_srt_file, self.config.subtitle_style,
+                                                output_path.parent / f"{output_path.stem}_positioned.ass")
 
         # 1. Xây dựng video filter (Làm mờ động thông minh: chỉ mờ khi có sub hiển thị, không có sub thì giữ nguyên video gốc)
         v_filter_parts = []

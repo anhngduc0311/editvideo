@@ -62,6 +62,7 @@ with tempfile.TemporaryDirectory() as directory:
                 assert config.stt_engine == "auto"
                 assert app_gui.get_tts_language(config.tts_config.voice) == "ja"
                 assert config.cookie_config.cookie_str is None
+                assert callable(factory.return_value.run.call_args.kwargs["subtitle_position_callback"])
             app._load_saved_settings()
             assert app.saved_translation_mode == mode
             assert app.saved_stt_mode == "Nhanh · Faster Whisper base"
@@ -111,6 +112,7 @@ with tempfile.TemporaryDirectory() as directory:
                 dialog.assert_not_called()
             # A stale/programmatic checkbox value must not open the dialog either.
             app.chk_interactive_roi.select()
+            app.chk_pause_subtitles.deselect()
             with patch.object(app_gui, "DouyinAutoPipeline") as factory, patch.object(app_gui.threading, "Thread") as thread, patch.object(app_gui.messagebox, "showinfo"):
                 factory.return_value.run.return_value = Path(directory) / "no_blur.mp4"
                 thread.side_effect = lambda target, daemon: Mock(start=target)
@@ -120,10 +122,49 @@ with tempfile.TemporaryDirectory() as directory:
                 assert config.blur_region.enabled is False
                 assert config.blur_region is not app.current_blur_region
                 assert factory.return_value.run.call_args.kwargs["interactive_roi_callback"] is None
+                assert factory.return_value.run.call_args.kwargs["subtitle_position_callback"] is None
             app.chk_blur.select()
             app._on_blur_toggled()
             assert app.chk_interactive_roi.cget("state") == "normal"
             assert app.btn_open_roi_selector.cget("state") == "normal"
+            # The worker must be released by every way of closing the pause dialog.
+            import threading
+            from types import SimpleNamespace
+            for action in ("apply", "skip", "destroy", "error"):
+                outcome = {}
+                def factory(parent, video, srt, style, **kwargs):
+                    if action == "error":
+                        raise RuntimeError("preview unavailable")
+                    dialog = Mock()
+                    if action == "apply":
+                        style.position_x, style.position_y = 0.4, 0.6
+                        kwargs["on_apply"](style)
+                    elif action == "skip":
+                        kwargs["on_skip"]()
+                    else:
+                        dialog.bind.side_effect = lambda event, callback, **kw: callback(SimpleNamespace(widget=dialog))
+                    return dialog
+                def worker():
+                    try:
+                        outcome["style"] = app._position_subtitles_hook(Path("video.mp4"), Path("sub.srt"), app_gui.SubtitleStyle(), 0.7)
+                    except RuntimeError:
+                        outcome["error"] = True
+                    finally:
+                        app.after(0, app.quit)
+                with patch.object(app_gui, "SubtitlePositionDialog", side_effect=factory):
+                    timeout = app.after(3000, app.quit)
+                    task = threading.Thread(target=worker, daemon=True)
+                    task.start()
+                    app.mainloop()
+                    task.join(timeout=1)
+                    app.after_cancel(timeout)
+                    assert not task.is_alive(), action
+                if action == "apply":
+                    assert outcome["style"].position_x == 0.4
+                elif action == "error":
+                    assert outcome.get("error")
+                else:
+                    assert outcome["style"] is None
             print("PASS: layouts and progress states")
         finally:
             app.destroy()

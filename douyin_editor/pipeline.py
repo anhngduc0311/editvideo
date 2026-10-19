@@ -5,6 +5,7 @@ pipeline.py - Master Pipeline Orchestrator for Automated Douyin Video Editing
 from __future__ import annotations
 
 import logging
+import copy
 from pathlib import Path
 import time
 from typing import Callable, Optional
@@ -13,7 +14,7 @@ from rich.panel import Panel
 from rich.table import Table
 from tqdm import tqdm
 
-from config import BlurRegion, CookieConfig, PipelineConfig, get_tts_language, get_target_language
+from config import BlurRegion, CookieConfig, PipelineConfig, SubtitleStyle, get_tts_language, get_target_language
 from downloader import DouyinDownloader
 from preprocessor import VideoPreprocessor
 from transcriber import WhisperTranscriber
@@ -78,12 +79,14 @@ class DouyinAutoPipeline:
         douyin_url_or_text: str,
         custom_name: Optional[str] = None,
         progress_callback: Optional[Callable[[int, int, str, str], None]] = None,
-        interactive_roi_callback: Optional[Callable[[Path, BlurRegion], Optional[BlurRegion]]] = None
+        interactive_roi_callback: Optional[Callable[[Path, BlurRegion], Optional[BlurRegion]]] = None,
+        subtitle_position_callback: Optional[Callable[[Path, Path, SubtitleStyle], Optional[SubtitleStyle]]] = None,
     ) -> Path:
         """
         Kích hoạt toàn bộ quy trình 8 bước tự động.
         :param progress_callback: Hàm nhận (current_step, total_steps, step_name, log_message)
         :param interactive_roi_callback: Hàm mở UI cho người dùng khoanh vùng mờ trên video vừa tải
+        :param subtitle_position_callback: Đặt chữ mẫu ngay sau khi tải, trước STT/dịch/TTS
         """
         start_time = time.time()
         self.print_pipeline_banner(douyin_url_or_text)
@@ -137,6 +140,18 @@ class DouyinAutoPipeline:
             bgm_audio = session_work_dir / f"{video_id}_bgm_track.wav"
             tts_synced_audio = session_work_dir / f"{video_id}_tts_synced.wav"
             final_output_video = self.config.output_dir / f"output_{video_id}_{target_language}.mp4"
+
+            if subtitle_position_callback:
+                # Position is chosen on the source frame before any speech/translation work.
+                # The eventual translated SRT keeps its actual text and timing.
+                sample_srt = session_work_dir / "layout_sample.srt"
+                sample_text = "こんにちは、みなさん！" if target_language == "ja" else "Phụ đề mẫu của video"
+                sample_srt.write_text(f"1\n00:00:02,000 --> 00:00:07,000\n{sample_text}\n", encoding="utf-8")
+                notify(2, "Bước 2: Đặt vị trí chữ phụ đề", "Đang tạm dừng. Kéo đặt chữ mẫu trên video rồi bấm Áp dụng & tiếp tục.")
+                chosen_style = subtitle_position_callback(raw_video, sample_srt, copy.copy(self.config.subtitle_style))
+                if chosen_style is not None:
+                    self.config.subtitle_style = chosen_style
+                    self.burner.style = chosen_style
 
             # ==========================================
             # BƯỚC 2: TRÍCH XUẤT AUDIO SIÊU TỐC & WHISPER AI (KHÔNG RENDER VIDEO)
@@ -201,11 +216,12 @@ class DouyinAutoPipeline:
             # BƯỚC 6, 7 & 8: SINGLE-PASS MASTER RENDER (GỘP TẤT CẢ TRONG 1 LẦN RENDER DUY NHẤT)
             # ==========================================
             sub_count = len(synced_vn_subtitles) if synced_vn_subtitles else len(raw_vn_subtitles)
+            render_srt = synced_vietnamese_srt if synced_vietnamese_srt.exists() else raw_vietnamese_srt
             notify(6, "Bước Cuối: Master Render 1-Pass", f"Đang làm chậm 0.70x, làm mờ sub cũ, đóng {sub_count} câu phụ đề & mix nhạc...")
             console.print(f"[bold cyan]▶ BƯỚC CUỐI: Single-Pass Master Render (0.70x + Blur + Hardsub {sub_count} câu + Lồng tiếng CapCut & BGM)...[/bold cyan]")
             final_video = self.compositor.render_single_pass_master(
                 raw_video_path=raw_video,
-                srt_file=synced_vietnamese_srt if synced_vietnamese_srt.exists() else raw_vietnamese_srt,
+                srt_file=render_srt,
                 tts_audio_path=tts_synced_audio,
                 bgm_audio_path=bgm_track_path,
                 output_path=final_output_video,
