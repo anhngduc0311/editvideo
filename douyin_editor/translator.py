@@ -101,16 +101,23 @@ def build_translation_system_instruction(config: PipelineConfig) -> str:
     else:
         topic_context = preset_ctx
 
+    source_name = LANGUAGE_NAMES.get(config.whisper_language, config.whisper_language)
+    slang_instruction = (
+        "5. VIỆT HÓA TIẾNG LÓNG DOUYIN TỰ NHIÊN: Chuyển các từ lóng mạng Trung Quốc ('逆天', '打脸', '翻车', '绝了', '老铁', '大冤种', '逆风翻盘', '偷家') sang tiếng lóng bắt trend hiện đại của giới trẻ Việt Nam ('quay xe cực gắt', 'ảo thật đấy', 'lật kèo ngoạn mục', 'bất ngờ chưa bà già', 'pha xử lý đi vào lòng đất', 'toang thật rồi').\n"
+        if config.whisper_language == "zh" else
+        f"5. VIỆT HÓA TIẾNG LÓNG TỰ NHIÊN: Chuyển thành ngữ và tiếng lóng {source_name} sang cách diễn đạt tiếng Việt phù hợp ngữ cảnh, giữ đúng ý và tên riêng.\n"
+    )
+
     return (
-        "Bạn là đạo diễn kịch bản & chuyên gia biên kịch phụ đề video ngắn (Douyin/TikTok/YouTube Shorts/Reels) từ Tiếng Trung sang Tiếng Việt xuất sắc nhất.\n"
+        f"Bạn là đạo diễn kịch bản & chuyên gia biên kịch phụ đề video ngắn (Douyin/TikTok/YouTube Shorts/Reels) từ {source_name} sang Tiếng Việt xuất sắc nhất.\n"
         "MỤC TIÊU TỐI THƯỢNG: Tạo ra bản dịch tiếng Việt mang cốt truyện LIỀN MẠCH, CUỐN HÚT, KỊCH TÍNH, GIỮ CHÂN NGƯỜI XEM TỐI ĐA (High-Retention Viral Video Script).\n\n"
         f"{topic_context}\n\n"
         "NGUYÊN TẮC BIÊN KỊCH & DỊCH THUẬT CỐT TRUYỆN VIRAL (BẮT BUỘC TUÂN THỦ):\n"
         "1. TẬN DỤNG BỐI CẢNH TOÀN BỘ VIDEO: Luôn đọc kỹ toàn bộ kịch bản video được cung cấp để hiểu rõ: Cốt truyện tổng thể, nhân vật chính/phụ, mối quan hệ, mở đầu, cao trào và kết cục. Tuyệt đối không dịch mù từng câu đơn lẻ.\n"
         "2. HOOK MỞ ĐẦU NGHẸT THỞ (3-5 GIÂY ĐẦU): Các câu mở đầu phải giật gân, khơi gợi tò mò tột độ hoặc đặt người xem vào tình huống cấp bách ('Không thể tin nổi...', 'Chuyện gì sẽ xảy ra nếu...', 'Một bí mật kinh hoàng...', 'Bạn dám thử thách này không?').\n"
-        "3. MẠCH TRUYỆN LIỀN MẠCH & LIÊN KẾT TỰ NHIÊN (NARRATIVE FLOW): Dùng các từ nối tự nhiên trong văn kể chuyện tiếng Việt ('Đúng lúc này...', 'Không ngờ rằng...', 'Hóa ra là...', 'Ngay sau đó...', 'Bất ngờ thay...'). Biến các câu thoại rời rạc của tiếng Trung thành một dòng chảy câu chuyện hấp dẫn.\n"
+        f"3. MẠCH TRUYỆN LIỀN MẠCH & LIÊN KẾT TỰ NHIÊN (NARRATIVE FLOW): Dùng các từ nối tự nhiên trong văn kể chuyện tiếng Việt ('Đúng lúc này...', 'Không ngờ rằng...', 'Hóa ra là...', 'Ngay sau đó...', 'Bất ngờ thay...'). Biến các câu thoại rời rạc của {source_name} thành một dòng chảy câu chuyện hấp dẫn.\n"
         "4. ĐỒNG NHẤT NGÔI XƯNG & VAI VẾ 100%: Duy trì nhất quán tuyệt đối cách xưng hô (người dẫn chuyện xưng 'mình/các bạn' hoặc 'tôi/anh em'; hoặc nhân vật 'anh ta/cô ấy/hắn/ông lão') từ đầu đến cuối video, không thay đổi thất thường.\n"
-        "5. VIỆT HÓA TIẾNG LÓNG DOUYIN TỰ NHIÊN: Chuyển các từ lóng mạng Trung Quốc ('逆天', '打脸', '翻车', '绝了', '老铁', '大冤种', '逆风翻盘', '偷家') sang tiếng lóng bắt trend hiện đại của giới trẻ Việt Nam ('quay xe cực gắt', 'ảo thật đấy', 'lật kèo ngoạn mục', 'bất ngờ chưa bà già', 'pha xử lý đi vào lòng đất', 'toang thật rồi').\n"
+        f"{slang_instruction}"
         "6. NHỊP ĐIỆU CÂN ĐỐI CHO GIỌNG ĐỌC CAPCUT AI TTS: Câu dịch phải súc tích, ngắt nhịp tự nhiên, có dấu phẩy (,) và dấu chấm (.) hợp lý để giọng đọc AI lồng tiếng ngắt nghỉ đúng chỗ, truyền cảm, không bị nuốt chữ hay dồn chữ.\n"
         "7. BẢO TOÀN SỐ LƯỢNG CÂU 100% (TỶ LỆ 1:1 TUYỆT ĐỐI): Đầu vào có bao nhiêu số [index] thì đầu ra PHẢI CÓ ĐÚNG BẤY NHIÊU DÒNG [index].\n"
         "8. ĐỊNH DẠNG ĐẦU RA BẮT BUỘC: Mỗi dòng trả về đúng cú pháp: [index] <câu dịch tiếng Việt> (Ví dụ: [1] Xin chào các bạn).\n"

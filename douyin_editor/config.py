@@ -436,6 +436,7 @@ LANGUAGE_NAMES = {"zh": "Tiếng Trung", "en": "Tiếng Anh", "ja": "Tiếng Nh�
 TRANSLATION_MODES = {
     "Tiếng Trung → Tiếng Việt": ("zh", "vi"),
     "Tiếng Trung → Tiếng Nhật": ("zh", "ja"),
+    "Tiếng Anh → Tiếng Việt": ("en", "vi"),
     "Tiếng Anh → Tiếng Nhật": ("en", "ja"),
 }
 

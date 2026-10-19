@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config import CookieConfig, PipelineConfig, TTSConfig, VOICE_PRESETS
 from downloader import DouyinDownloader
 from transcriber import WhisperTranscriber
-from translator import DeepSeekTranslator, ChatGPTWebTranslator, translate_batch_resilient, parse_srt_string
+from translator import DeepSeekTranslator, ChatGPTWebTranslator, translate_batch_resilient, parse_srt_string, build_translation_system_instruction
 
 VIDEO_ID = "BaW_jenozKc"
 ENGLISH = "1\n00:00:01,000 --> 00:00:03,000\nHello everyone!\n"
@@ -86,6 +86,30 @@ class EnglishJapaneseTests(unittest.TestCase):
         self.config = PipelineConfig(whisper_language="en", target_language="ja",
                                      deepseek_api_key="test-key", gemini_api_key="test-key",
                                      tts_config=TTSConfig(voice=VOICE_PRESETS["japanese_minecraft_clone"]["voice"]))
+
+    def test_english_to_vietnamese_provider_prompt_and_subtitle_timing(self):
+        self.config.target_language = "vi"
+        self.config.tts_config = TTSConfig()
+        instruction = build_translation_system_instruction(self.config)
+        self.assertIn("Tiếng Anh sang Tiếng Việt", instruction)
+        self.assertNotIn("Tiếng Trung", instruction)
+        self.assertNotIn("tiếng Trung", instruction)
+        self.assertNotIn("Trung Quốc", instruction)
+        response = Mock(status_code=200)
+        response.json.return_value = {"choices": [{"message": {"content": "[1] Xin chào các bạn!"}}]}
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "en.srt"
+            target = Path(directory) / "vi.srt"
+            source.write_text(ENGLISH, encoding="utf-8")
+            with patch("translator.requests.post", return_value=response) as post:
+                items = DeepSeekTranslator(self.config).translate_srt(source, target)
+            messages = post.call_args.kwargs["json"]["messages"]
+            self.assertIn("Tiếng Anh sang Tiếng Việt", messages[0]["content"])
+            self.assertIn("TIẾNG ANH", messages[1]["content"])
+            self.assertIn("Tiếng Việt", messages[1]["content"])
+            self.assertEqual(items[0].text, "Xin chào các bạn!")
+            self.assertEqual((items[0].start_seconds, items[0].end_seconds), (1, 3))
+            self.assertIn("Xin chào các bạn!", target.read_text(encoding="utf-8"))
 
     def test_missing_translation_retries_keep_english_source_and_japanese_target(self):
         batch = parse_srt_string(ENGLISH)

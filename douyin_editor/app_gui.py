@@ -1254,8 +1254,10 @@ class DouyinEditorApp(ctk.CTk):
         target = get_tts_language(selection)
         current = self.cmb_translation_mode.get()
         if TRANSLATION_MODES[current][1] != target:
-            self.cmb_translation_mode.set("Tiếng Trung → Tiếng Nhật" if target == "ja"
-                                          else "Tiếng Trung → Tiếng Việt")
+            source = TRANSLATION_MODES[current][0]
+            mode = next(name for name, languages in TRANSLATION_MODES.items()
+                        if languages == (source, target))
+            self.cmb_translation_mode.set(mode)
         self._save_settings()
 
     def _preview_voice_clicked(self):
