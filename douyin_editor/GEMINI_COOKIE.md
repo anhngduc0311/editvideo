@@ -32,3 +32,9 @@ Kết nối dùng [gemini-webapi](https://github.com/HanaokaYuzu/Gemini-API), m�
 thử lại tối đa một lần với lỗi mạng tạm thời. Khi gặp lỗi xác thực, giới hạn tài khoản hoặc chặn tạm thời,
 ứng dụng dừng và hiển thị hướng dẫn. Không có bảo đảm tránh chặn, CAPTCHA hay hạn mức của Gemini.
 Phiên web được đóng sau mỗi lần kiểm tra hoặc dịch; không giữ kết nối nền khi công việc đã kết thúc.
+
+Nếu Gemini trả thiếu câu hoặc sai số thứ tự, ứng dụng ghép lại bằng index/mốc thời gian khi xác định được,
+hoặc tự chia nhóm dịch nhỏ hơn. Câu vẫn sai cấu trúc sẽ được thử lại một lần riêng lẻ.
+Ứng dụng không chèn lời thoại nguồn vào phần còn thiếu để giả làm bản dịch hoàn chỉnh.
+Tiến độ được lưu cạnh file phụ đề đích (`.gemini-progress.json`) sau mỗi nhóm thành công.
+Khi chạy lại cùng nội dung và cặp ngôn ngữ, ứng dụng chỉ dịch các câu còn thiếu.

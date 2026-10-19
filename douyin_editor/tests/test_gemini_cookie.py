@@ -97,6 +97,68 @@ class GeminiCookieTests(unittest.TestCase):
         self.assertEqual(self.client.generate_content.await_count, 2)
         self.client.close.assert_awaited_once()
 
+    def test_reorders_ids_and_recovers_reset_numbering_using_timestamps(self):
+        expected = parse_srt_string(subtitles(16, 2))
+        response = subtitles(17, 1, "二番") + "\n" + subtitles(16, 1, "一番")
+        ordered = GeminiCookieTranslator._align_response(expected, response)
+        self.assertEqual([item.text for item in ordered], ["一番", "二番"])
+        reset = subtitles(16, 1, "一番").replace("16\n00", "1\n00") + "\n" + subtitles(17, 1, "二番").replace("17\n00", "2\n00")
+        ordered = GeminiCookieTranslator._align_response(expected, reset)
+        self.assertEqual([item.index for item in ordered], [16, 17])
+        self.assertEqual([item.start_str for item in ordered], [item.start_str for item in expected])
+
+    def test_incomplete_batch_is_split_and_all_translations_are_saved(self):
+        self.client.generate_content.side_effect = [Mock(text=subtitles(1, 2, "不完全")),
+                                                   Mock(text=subtitles(1, 2, "前半")),
+                                                   Mock(text=subtitles(3, 2, "後半"))]
+        with tempfile.TemporaryDirectory() as directory, patch("gemini_webapi.GeminiClient", return_value=self.client):
+            source, target = Path(directory) / "en.srt", Path(directory) / "ja.srt"
+            source.write_text(subtitles(count=4), encoding="utf-8")
+            translated = create_translator(self.config).translate_srt(source, target)
+            self.assertEqual([item.text for item in translated], ["前半", "前半", "後半", "後半"])
+            self.assertEqual(self.client.generate_content.await_count, 3)
+            checkpoint = target.with_name(target.name + ".gemini-progress.json").read_text(encoding="utf-8")
+            self.assertNotIn("private-psid", checkpoint)
+            self.assertNotIn("Hello everyone", target.read_text(encoding="utf-8"))
+
+    def test_resume_uses_successful_subgroups_after_failure(self):
+        self.client.generate_content.side_effect = [Mock(text=subtitles(1, 1, "不完全")),
+                                                   Mock(text=subtitles(1, 2, "保存済み")),
+                                                   UsageLimitExceededError("private-psid")]
+        with tempfile.TemporaryDirectory() as directory, patch("gemini_webapi.GeminiClient", return_value=self.client):
+            source, target = Path(directory) / "en.srt", Path(directory) / "ja.srt"
+            source.write_text(subtitles(count=4), encoding="utf-8")
+            with self.assertRaises(GeminiCookieError):
+                create_translator(self.config).translate_srt(source, target)
+            self.assertFalse(target.exists())
+            self.client.generate_content.reset_mock()
+            self.client.generate_content.side_effect = [Mock(text=subtitles(3, 2, "再開"))]
+            translated = create_translator(self.config).translate_srt(source, target)
+            self.client.generate_content.assert_awaited_once()
+            requested = parse_srt_string(self.client.generate_content.call_args.args[0])
+            self.assertEqual([item.index for item in requested], [3, 4])
+            self.assertEqual([item.text for item in translated], ["保存済み", "保存済み", "再開", "再開"])
+            with patch("gemini_webapi.GeminiClient") as factory:
+                self.assertEqual(len(create_translator(self.config).translate_srt(source, target)), 4)
+                factory.assert_not_called()
+            # Modified input must invalidate previous progress, even at the same path.
+            source.write_text(subtitles(count=4, text="Different input"), encoding="utf-8")
+            self.client.generate_content.reset_mock()
+            self.client.generate_content.side_effect = [Mock(text=subtitles(1, 4, "新しい翻訳"))]
+            translated = create_translator(self.config).translate_srt(source, target)
+            requested = parse_srt_string(self.client.generate_content.call_args.args[0])
+            self.assertEqual(len(requested), 4)
+            self.assertTrue(all(item.text == "新しい翻訳" for item in translated))
+
+    def test_single_cue_format_retry_is_bounded_and_can_recover(self):
+        self.client.generate_content.side_effect = [Mock(text="not an SRT"), Mock(text=subtitles(1, 1, "回復"))]
+        with tempfile.TemporaryDirectory() as directory, patch("gemini_webapi.GeminiClient", return_value=self.client):
+            source, target = Path(directory) / "en.srt", Path(directory) / "ja.srt"
+            source.write_text(subtitles(), encoding="utf-8")
+            result = create_translator(self.config).translate_srt(source, target)
+            self.assertEqual(result[0].text, "回復")
+            self.assertEqual(self.client.generate_content.await_count, 2)
+
     def test_spacing_and_status_errors_are_safe(self):
         self.config.gemini_web_request_interval = 4
         self.client.generate_content.return_value = Mock(text="OK")

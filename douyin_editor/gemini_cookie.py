@@ -2,16 +2,31 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 from contextlib import contextmanager, suppress
+import hashlib
 from http.cookies import CookieError, SimpleCookie
+import json
+import logging
+import os
+from pathlib import Path
+import re
+import tempfile
 import time
+from tqdm import tqdm
 
-from config import PipelineConfig
-from translator import GeminiTranslator, clean_markdown_response, parse_srt_string
+from config import PipelineConfig, get_target_language
+from translator import GeminiTranslator, clean_markdown_response, parse_srt_string, translation_instruction_for_voice
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiCookieError(RuntimeError):
     """A user-facing error which never includes session credentials."""
+
+
+class GeminiSubtitleFormatError(GeminiCookieError):
+    """Malformed model output, eligible for a smaller translation batch."""
 
 
 def parse_gemini_cookies(psid: str, psidts: str = "") -> tuple[str, str]:
@@ -50,7 +65,7 @@ def session_error(exc: Exception) -> GeminiCookieError:
 
 
 class GeminiCookieTranslator(GeminiTranslator):
-    """Reuse SRT batching and language prompts; supply an authenticated web transport."""
+    """Translate through one web session with bounded recovery and saved progress."""
 
     def __init__(self, config: PipelineConfig):
         self.config = config
@@ -59,6 +74,7 @@ class GeminiCookieTranslator(GeminiTranslator):
         self._runner = None
         self._client = None
         self._last_request = None
+        self._on_valid_batch = None
 
     @contextmanager
     def _session(self):
@@ -95,23 +111,18 @@ class GeminiCookieTranslator(GeminiTranslator):
             response = await asyncio.wait_for(self._client.generate_content(prompt), timeout=timeout)
             text = response.text
             if not isinstance(text, str) or not text.strip():
-                raise GeminiCookieError("Gemini trả phản hồi rỗng. Đã dừng để tránh tạo bản dịch thiếu nội dung.")
+                raise GeminiSubtitleFormatError("Gemini trả phản hồi rỗng.")
             return text
         finally:
             self._last_request = time.monotonic()
 
-    def _call_gemini_api(self, prompt: str, timeout: int = 120, max_retries: int = 2) -> str:
+    def _request(self, prompt: str, timeout: int = 120, max_retries: int = 2) -> str:
         if self._runner is None:
             raise GeminiCookieError("Phiên Gemini chưa được khởi tạo.")
         attempts = max(1, min(max_retries, 2))
         for attempt in range(attempts):
             try:
                 text = self._runner.run(self._generate(prompt, timeout))
-                expected = parse_srt_string(prompt)
-                actual = parse_srt_string(clean_markdown_response(text))
-                if expected and ([item.index for item in actual] != [item.index for item in expected]
-                                 or any(not item.text.strip() for item in actual)):
-                    raise GeminiCookieError("Gemini trả thiếu hoặc sai thứ tự câu phụ đề. Đã dừng; hãy thử lại để tránh xuất video dịch thiếu.")
                 return text
             except Exception as exc:
                 # Only retry transient network failures, never authentication or quota errors.
@@ -121,9 +132,129 @@ class GeminiCookieTranslator(GeminiTranslator):
                 raise session_error(exc) from None
         raise GeminiCookieError("Không nhận được phản hồi Gemini.")
 
+    @staticmethod
+    def _align_response(expected, response):
+        actual = parse_srt_string(clean_markdown_response(response))
+        if len(actual) != len(expected) or any(not item.text.strip() for item in actual):
+            raise GeminiSubtitleFormatError("Gemini trả không đủ câu phụ đề.")
+        ids = [item.index for item in actual]
+        expected_ids = [item.index for item in expected]
+        actual_times = [(item.start_str, item.end_str) for item in actual]
+        expected_times = [(item.start_str, item.end_str) for item in expected]
+        if len(set(ids)) == len(ids) and set(ids) == set(expected_ids):
+            mapped = {item.index: item for item in actual}
+            ordered = [mapped[item.index] for item in expected]
+        elif len(set(actual_times)) == len(actual_times) and set(actual_times) == set(expected_times):
+            # Gemini sometimes resets a later batch's numbering to 1. Exact cue
+            # timestamps can identify those lines without guessing by position.
+            mapped = {(item.start_str, item.end_str): item for item in actual}
+            ordered = [mapped[(item.start_str, item.end_str)] for item in expected]
+        else:
+            raise GeminiSubtitleFormatError("Gemini trả số thứ tự không xác định được.")
+        normalized = []
+        for original, translated in zip(expected, ordered):
+            item = copy.copy(original)
+            item.text = translated.text.strip()
+            normalized.append(item)
+        return normalized
+
+    def _translate_batch(self, batch, prefix, timeout, max_retries):
+        data = "\n\n".join(item.to_srt_block().strip() for item in batch)
+        try:
+            translated = self._align_response(batch, self._request(f"{prefix}\n\n{data}", timeout, max_retries))
+        except GeminiSubtitleFormatError:
+            if len(batch) > 1:
+                middle = len(batch) // 2
+                logger.warning("Gemini trả sai cấu trúc ở câu %s–%s; tự chia nhóm %s câu thành %s + %s.",
+                               batch[0].index, batch[-1].index, len(batch), middle, len(batch)-middle)
+                return (self._translate_batch(batch[:middle], prefix, timeout, max_retries)
+                        + self._translate_batch(batch[middle:], prefix, timeout, max_retries))
+            correction = f"{prefix}\nCHỈ dịch 1 câu bên dưới. Trả đúng 1 khối SRT, giữ nguyên index {batch[0].index} và timeline."
+            try:
+                translated = self._align_response(batch, self._request(f"{correction}\n\n{data}", timeout, max_retries))
+            except GeminiSubtitleFormatError:
+                raise GeminiCookieError(f"Gemini chưa trả bản dịch hợp lệ cho câu {batch[0].index}. Tiến độ đã dịch được giữ lại; chạy lại để tiếp tục.") from None
+        if self._on_valid_batch:
+            self._on_valid_batch(translated)
+        return translated
+
+    def _call_gemini_api(self, prompt: str, timeout: int = 120, max_retries: int = 2) -> str:
+        expected = parse_srt_string(prompt)
+        if not expected:
+            return self._request(prompt, timeout, max_retries)
+        first_block = re.search(r"(?m)^\d+\s*\n\d{2}:\d{2}:\d{2}[,.]\d{3}\s*-->", prompt)
+        prefix = prompt[:first_block.start()] if first_block else "Dịch các câu SRT sau, giữ nguyên index và timeline."
+        translated = self._translate_batch(expected, prefix, timeout, max_retries)
+        return "\n".join(item.to_srt_block() for item in translated)
+
+    @staticmethod
+    def _atomic_text(path, text):
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                             prefix=path.name + ".", suffix=".tmp", delete=False) as stream:
+                temporary = Path(stream.name)
+                stream.write(text)
+            os.replace(temporary, path)
+        finally:
+            if temporary is not None and temporary.exists():
+                temporary.unlink()
+
     def translate_srt(self, input_srt_path, output_srt_path):
-        with self._session():
-            return super().translate_srt(input_srt_path, output_srt_path)
+        source, output = Path(input_srt_path).resolve(), Path(output_srt_path).resolve()
+        raw = source.read_text(encoding="utf-8").strip()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        if not raw:
+            self._atomic_text(output, "")
+            return []
+        items = parse_srt_string(raw)
+        if not items or len({item.index for item in items}) != len(items):
+            raise GeminiCookieError("File phụ đề gốc không hợp lệ hoặc có số thứ tự trùng nhau.")
+        fingerprint = hashlib.sha256(json.dumps(["gemini-web-v1", self.config.whisper_language,
+                                                get_target_language(self.config), raw], ensure_ascii=False).encode("utf-8")).hexdigest()
+        checkpoint = output.with_name(output.name + ".gemini-progress.json")
+        completed = {}
+        originals = {item.index: item for item in items}
+        try:
+            saved = json.loads(checkpoint.read_text(encoding="utf-8"))
+            if saved.get("fingerprint") == fingerprint:
+                for key, text in saved.get("translations", {}).items():
+                    if int(key) in originals and isinstance(text, str) and text.strip():
+                        completed[int(key)] = text
+        except (OSError, ValueError, TypeError, AttributeError):
+            completed = {}
+        instruction = translation_instruction_for_voice(self.config, (
+            "Bạn là chuyên gia biên dịch phụ đề từ Tiếng Trung sang Tiếng Việt.\n"
+            "Dịch tự nhiên, ngắn gọn sang tiếng Việt. Chỉ trả nội dung SRT.\n"
+            "GIỮ NGUYÊN TUYỆT ĐỐI timeline, số thứ tự và số lượng câu. Không gộp hay bỏ câu.\n"
+        ))
+        pending = [item for item in items if item.index not in completed]
+        logger.info("Gemini Cookie: khôi phục %s/%s câu đã dịch.", len(completed), len(items))
+        with tqdm(total=len(items), initial=len(completed), desc="[Bước 3] Gemini Cookie dịch SRT", leave=False) as progress:
+            def save_batch(batch):
+                new_count = sum(item.index not in completed for item in batch)
+                completed.update({item.index: item.text for item in batch})
+                try:
+                    self._atomic_text(checkpoint, json.dumps({"fingerprint": fingerprint, "translations": completed}, ensure_ascii=False, indent=2))
+                except OSError:
+                    raise GeminiCookieError("Không lưu được tiến độ dịch. Kiểm tra quyền ghi hoặc dung lượng ổ đĩa.") from None
+                progress.update(new_count)
+            self._on_valid_batch = save_batch
+            try:
+                if pending:
+                    with self._session():
+                        for start in range(0, len(pending), 15):
+                            batch = pending[start:start+15]
+                            self._call_gemini_api(instruction + "\n" + "\n".join(item.to_srt_block() for item in batch))
+            finally:
+                self._on_valid_batch = None
+        translated = []
+        for original in items:
+            item = copy.copy(original)
+            item.text = completed[item.index]
+            translated.append(item)
+        self._atomic_text(output, "\n".join(item.to_srt_block() for item in translated))
+        return translated
 
     def check_status(self) -> dict:
         try:
