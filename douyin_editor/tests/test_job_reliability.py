@@ -85,17 +85,52 @@ class SpeechReliabilityTests(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(self.engine.synthesize_phrases.call_count, 2)
 
-    def test_overflow_stops_instead_of_drifting_or_cutting(self):
+    def test_overflow_borrows_adjacent_time_without_overlap_or_cutting(self):
         self.engine.synthesize_phrases.return_value = [("First.", audio_bytes(1900), 1900),
                                                        ("Second.", audio_bytes(), 400)]
-        with self.assertRaises(TTSTimingError):
-            self.run_sync()
-        self.assertFalse((self.directory / "audio.wav").exists())
+        path, items = self.run_sync()
+        self.assertEqual(len(items), 2)
+        self.assertLessEqual(items[0].end_seconds, items[1].start_seconds)
+        self.assertLessEqual(items[-1].end_seconds, 2)
+        self.assertEqual(len(AudioSegment.from_file(io.BytesIO(path.read_bytes()), format="wav")), 2000)
 
-    def test_last_phrase_cannot_extend_past_video(self):
+    def test_last_phrase_uses_preceding_silence_when_it_can_fit(self):
         self.engine.synthesize_phrases.return_value = [("Second.", audio_bytes(1900), 1900)]
-        with self.assertRaises(TTSTimingError):
-            self.run_sync([self.items[1]])
+        _, items = self.run_sync([self.items[1]])
+        self.assertLess(items[0].start_seconds, 1)
+        self.assertLessEqual(items[0].end_seconds, 2)
+
+    def test_short_character_split_does_not_abort_and_recovers_after_pause(self):
+        items = [phrase(1, 0, 1.718, "Chơi thôi! Đầu tiên, mình cần phải làm gì nhỉ?"),
+                 phrase(2, 2.027, 3.315, "Nước. nước đâu rồi?"),
+                 phrase(3, 9, 11, "Tiếp tục.")]
+        self.engine.synthesize_phrases.return_value = [
+            ("Chơi thôi!", audio_bytes(816), 816),
+            ("Đầu tiên, mình cần phải làm gì nhỉ?", audio_bytes(2208), 2208),
+            ("Nước.", audio_bytes(576), 576),
+            ("nước đâu rồi?", audio_bytes(960), 960),
+            ("Tiếp tục.", audio_bytes(400), 400)]
+        _, synced = self.run_sync(items, duration=12)
+        self.assertEqual(len(synced), 5)
+        self.assertTrue(all(a.end_seconds <= b.start_seconds for a, b in zip(synced, synced[1:])))
+        self.assertEqual(synced[-1].start_seconds, 9)
+
+    def test_dense_speech_extends_audio_instead_of_truncating_the_last_cue(self):
+        self.engine.synthesize_phrases.return_value = [("First.", audio_bytes(1900), 1900),
+                                                       ("Second.", audio_bytes(1900), 1900)]
+        path, items = self.run_sync()
+        audio = AudioSegment.from_file(io.BytesIO(path.read_bytes()), format="wav")
+        self.assertGreater(len(audio), 2000)
+        self.assertAlmostEqual(items[-1].end_seconds, len(audio) / 1000, places=3)
+        self.assertGreater(audio[-100:].rms, 0)
+
+    def test_overlapping_source_blocks_preserve_sentence_order(self):
+        self.engine.synthesize_phrases.return_value = [("First.", audio_bytes(400), 400),
+                                                       ("Second.", audio_bytes(400), 400)]
+        _, synced = self.run_sync([phrase(1, 0.5, 1.4, "First."),
+                                   phrase(2, 0.4, 1.5, "Second.")])
+        self.assertEqual([s.text for s in synced], ["First.", "Second."])
+        self.assertLessEqual(synced[0].end_seconds, synced[1].start_seconds)
 
     def test_small_overflow_fits_without_moving_next_phrase(self):
         self.engine.synthesize_phrases.return_value = [("First.", audio_bytes(1100), 1100),
@@ -225,6 +260,24 @@ class SecurityAndReviewTests(unittest.TestCase):
 
 
 class RenderIntegrationTests(unittest.TestCase):
+    def test_render_extends_last_frame_to_preserve_extra_speech(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw, speech, srt, output = [root / name for name in ("raw.mp4", "speech.wav", "speech.srt", "final.mp4")]
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+                            "color=c=blue:s=160x90:r=25", "-t", "1", "-c:v", "libx264",
+                            str(raw)], check=True, capture_output=True, timeout=15)
+            with speech.open("wb") as stream:
+                Sine(440).to_audio_segment(duration=2200).export(stream, format="wav")
+            srt.write_text(phrase(1, 0, 2.2, "Câu cuối vẫn đọc đủ.").to_srt_block(), encoding="utf-8")
+            config = PipelineConfig(speed_factor=1, final_speed=1.2, export_resolution="original")
+            config.blur_region.enabled = False
+            VideoCompositor(config).render_single_pass_master(raw, srt, speech, None, output, 1, 160, 90)
+            result = subprocess.run(["ffprobe", "-v", "quiet", "-show_streams", "-of", "json", str(output)],
+                                    capture_output=True, check=True, timeout=15)
+            durations = {s["codec_type"]: float(s["duration"]) for s in json.loads(result.stdout)["streams"]}
+            self.assertGreaterEqual(durations["video"], 2.2 / 1.2 - 0.05)  # one 25fps frame
+            self.assertGreaterEqual(durations["audio"], 2.2 / 1.2 - 0.03)
     def test_empty_synced_srt_falls_back_to_translated_captions(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

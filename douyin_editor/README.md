@@ -47,8 +47,10 @@ Chủ tài khoản cần thu hồi/thay key trên trang quản lý của nhà cu
   Bỏ chọn để chạy lại các bước; cache audio từng câu vẫn được dùng nếu nội dung/giọng không đổi.
 - TTS thiếu/hỏng audio được thử lại riêng từng câu. Sau khi hết lượt thử, tác vụ báo lỗi
   và giữ các audio thành công để lần sau không tạo lại.
-- Lời đọc chỉ tăng tốc tối đa 1,25 lần. Nếu vẫn vượt khung, tác vụ báo nội dung câu cần
-  rút gọn; chạy lại, sửa trong cửa sổ duyệt rồi tiếp tục. Không tự cắt chữ hoặc đẩy câu sau lệch thời gian.
+- Lời đọc chỉ tăng tốc tối đa 1,25 lần. Câu dài hơn khoảng chia ước lượng được căn lại
+  theo độ dài audio thực, tận dụng khoảng nghỉ và tránh chồng câu. Phụ đề đi cùng lời đọc;
+  thời gian trở về mốc nguồn khi gặp khoảng nghỉ đủ dài. Nếu tổng lời đọc dài hơn video,
+  giữ thêm khung hình cuối để không cắt mất lời kết. Có thể rút gọn bản dịch để bám sát cảnh hơn.
 
 Checkpoint và audio từng câu nằm trong `workspace_temp/jobs/`. Xóa thư mục job tương ứng
 khi không cần tiếp tục hoặc muốn tạo lại toàn bộ audio. Không sửa file khi tác vụ đang chạy.

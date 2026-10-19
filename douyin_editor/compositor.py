@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 import re
 import subprocess
+import wave
 from typing import Callable, List, Optional, Tuple
 from tqdm import tqdm
 
@@ -287,7 +288,17 @@ class VideoCompositor:
 
         # Tính toán PTS hiệu dụng: Kết hợp làm chậm 0.70x và tăng tốc xuất bản 1.2x
         pts_mult = (1.0 / self.config.speed_factor) / final_speed
-        real_target_duration = total_duration_sec / final_speed if final_speed > 0 else total_duration_sec
+        try:
+            with wave.open(str(tts_audio_path), "rb") as audio:
+                speech_duration = audio.getnframes() / audio.getframerate()
+        except (wave.Error, EOFError):
+            probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                                    "-of", "default=noprint_wrappers=1:nokey=1", str(tts_audio_path)],
+                                   capture_output=True, text=True, check=True, timeout=15)
+            speech_duration = float(probe.stdout.strip())
+        real_target_duration = max(total_duration_sec, speech_duration) / final_speed
+        extension = max(0.0, speech_duration - total_duration_sec) / final_speed
+        tail_filter = f",tpad=stop_mode=clone:stop_duration={extension + 0.1:.6f}" if extension > 0.001 else ""
 
         target_w, target_h = self.get_target_resolution(video_width, video_height)
         logger.info(f"[Master Render] Đầu vào: {video_width}x{video_height} -> Xuất chuẩn: {target_w}x{target_h} ({getattr(self.config, 'export_resolution', '1080p').upper()})")
@@ -334,9 +345,9 @@ class VideoCompositor:
         if should_apply_blur:
             v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS{scale_filter},format=yuv420p,split=2[v_speed][v_crop];")
             v_filter_parts.append(f"[v_crop]crop={w}:{h}:{x}:{y},boxblur={safe_power}:5[v_blurred];")
-            v_filter_parts.append(f"[v_speed][v_blurred]overlay={x}:{y}{overlay_enable_clause}[v_base]")
+            v_filter_parts.append(f"[v_speed][v_blurred]overlay={x}:{y}{overlay_enable_clause}{tail_filter}[v_base]")
         else:
-            v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS{scale_filter},format=yuv420p[v_base]")
+            v_filter_parts.append(f"[0:v]setpts={pts_mult:.6f}*PTS{scale_filter},format=yuv420p{tail_filter}[v_base]")
 
         # Caption visibility is independent of blur and applied after video effects.
         if has_subtitles:

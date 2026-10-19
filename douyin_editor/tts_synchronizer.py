@@ -42,6 +42,10 @@ class TTSTimingError(RuntimeError):
     """A phrase cannot fit its slot without excessive speech acceleration."""
 
 
+class TTSServiceError(RuntimeError):
+    """A provider-wide failure should stop the job instead of retrying every cue."""
+
+
 def format_timestamp(seconds: float) -> str:
     """Chuyển đổi số giây (float) sang định dạng SRT: HH:MM:SS,mmm"""
     if seconds < 0:
@@ -67,7 +71,6 @@ class CapCutTTSEngine:
     def __init__(self):
         self.cancel_event = None
         from capcut_tts_api import CapCutClient
-        self.client = CapCutClient()
         self.session = requests.Session()
         adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=2)
         self.session.mount("http://", adapter)
@@ -76,6 +79,7 @@ class CapCutTTSEngine:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             "Accept": "*/*"
         })
+        self.client = CapCutClient(session=self.session, timeout=20)
 
     def synthesize_phrases(
         self,
@@ -92,6 +96,9 @@ class CapCutTTSEngine:
         if not texts:
             return []
         check_cancelled(self.cancel_event)
+        speed = float(rate)
+        if not 0.70 <= speed <= 1.35:
+            raise ValueError("Tốc độ giọng CapCut phải trong khoảng 0.70–1.35.")
 
         final_voice = voice
         final_res_id = resource_id
@@ -104,15 +111,13 @@ class CapCutTTSEngine:
         for attempt in range(1, max_retries + 1):
             check_cancelled(self.cancel_event)
             try:
-                url, headers, body = self.client.build_tts_new_request(
+                # Use the SDK's TTS methods: the builder has no `rate` argument,
+                # and query_tts_task supplies mode='tts' and the bind identity.
+                resp_json = self.client.create_tts_task(
                     texts=texts,
                     voice=final_voice,
-                    resource_id=final_res_id,
-                    rate=rate
+                    resource_id=final_res_id
                 )
-
-                resp = self.session.post(url, headers=headers, data=body, timeout=(5, 15))
-                resp_json = resp.json()
 
                 if "data" not in resp_json or not resp_json["data"].get("tasks"):
                     raise RuntimeError(f"CapCut Task Creation failed: {resp_json.get('errmsg', 'Unknown')}")
@@ -120,39 +125,41 @@ class CapCutTTSEngine:
                 task_info = resp_json["data"]["tasks"][0]
                 task_id = task_info["id"]
                 task_token = task_info["token"]
+                bind_id = task_info.get("bind_id") or resp_json["data"].get("bind_id") or ""
 
                 # Polling chờ kết quả với chu kỳ thích ứng nhanh (0.35s)
                 completed = False
                 payload_data = None
-                for poll_i in range(35):
+                deadline = time.monotonic() + 120
+                while time.monotonic() < deadline:
                     time.sleep(0.35)
                     check_cancelled(self.cancel_event)
-                    q_url, q_headers, q_body = self.client.build_query_request(
-                        task_id, task_token, "sami_text_to_speech"
-                    )
-                    q_resp = self.session.post(q_url, headers=q_headers, data=q_body, timeout=(5, 15))
-                    q_json = q_resp.json()
+                    q_json = self.client.query_tts_task(task_id, task_token, bind_id=bind_id)
 
                     if q_json.get("data", {}).get("tasks"):
                         t_obj = q_json["data"]["tasks"][0]
-                        if t_obj.get("status") == "succeed":
-                            payload_data = json.loads(t_obj["payload"])
+                        status = str(t_obj.get("status", "")).lower()
+                        if status in {"success", "succeed", "succeeded", "completed", "done"}:
+                            raw_payload = t_obj.get("payload", {})
+                            payload_data = json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
                             completed = True
                             break
-                        elif t_obj.get("status") == "failed":
-                            raise RuntimeError(f"CapCut Task failed on server: {t_obj}")
+                        elif status in {"failed", "error", "cancelled", "canceled"}:
+                            raise RuntimeError("CapCut báo tác vụ tạo giọng thất bại.")
 
                 if not completed or not payload_data:
                     raise TimeoutError("CapCut TTS polling timed out")
 
                 # Tải song song toàn bộ audio streams qua ThreadPoolExecutor
                 sub_list = payload_data.get("audio_subtitles", [])
+                if not sub_list:
+                    raise RuntimeError("CapCut hoàn tất nhưng không trả về audio.")
 
                 def _fetch_single_audio(item_tuple):
                     check_cancelled(self.cancel_event)
                     idx, sub = item_tuple
                     t_text = sub.get("text", texts[idx] if idx < len(texts) else "")
-                    audio_url = sub.get("speech_url")
+                    audio_url = sub.get("speech_url") or sub.get("audio_url") or sub.get("url")
                     duration_ms = sub.get("duration", 0)
 
                     audio_bytes = None
@@ -169,6 +176,12 @@ class CapCutTTSEngine:
                                     logger.warning(f"Lỗi tải audio câu '{t_text}' (Lần {dl_attempt}/3): {dl_err}")
                                 time.sleep(0.5 * dl_attempt)
 
+                    if audio_bytes and abs(speed - 1.0) >= 0.02:
+                        audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
+                        audio = VietnameseTTSSynchronizer._speed_change_ffmpeg(audio, speed)
+                        buffer = io.BytesIO()
+                        audio.export(buffer, format="wav")
+                        audio_bytes, duration_ms = buffer.getvalue(), len(audio)
                     return (idx, t_text, audio_bytes, duration_ms)
 
                 workers = min(8, len(sub_list) or 1)
@@ -178,15 +191,26 @@ class CapCutTTSEngine:
                 # Sắp xếp đúng thứ tự ban đầu
                 fetched_items.sort(key=lambda x: x[0])
                 results = [(item[1], item[2], item[3]) for item in fetched_items]
+                if not any(data for _, data, _ in results):
+                    raise RuntimeError("Không tải được audio từ CapCut. Kiểm tra kết nối hoặc quyền truy cập dịch vụ.")
 
                 return results
 
             except JobCancelled:
                 raise
             except Exception as e:
-                logger.warning(f"Lần thử {attempt}/{max_retries} sinh CapCut TTS thất bại: {e}")
-                if attempt == max_retries:
-                    return [(t, None, 0) for t in texts]
+                status_code = getattr(e, "status_code", None)
+                response_data = getattr(e, "response_data", None) or {}
+                detail = (str(response_data.get("errmsg", ""))[:180]
+                          if isinstance(response_data, dict) else "")
+                if isinstance(e, requests.RequestException):
+                    detail = "Không kết nối được dịch vụ CapCut hoặc yêu cầu quá thời gian chờ."
+                elif not detail:
+                    detail = str(e)[:200]
+                message = f"CapCut TTS{f' (HTTP {status_code})' if status_code else ''}: {detail}"
+                logger.warning("Lần thử %s/%s: %s", attempt, max_retries, message)
+                if attempt == max_retries or status_code in (401, 403):
+                    raise TTSServiceError(message + " Audio đã tạo được giữ lại; chạy tiếp sau khi khắc phục.") from e
                 time.sleep(1.5)
 
         return [(t, None, 0) for t in texts]
@@ -343,8 +367,6 @@ class VietnameseTTSSynchronizer:
         total_ms = int(total_duration_seconds * 1000)
         logger.info(f"[Bước 4] Đang sinh giọng đọc CapCut ({self.tts_config.voice}) nói trọn vẹn từng câu...")
 
-        master_track = AudioSegment.silent(duration=total_ms)
-
         # 1. Tách phụ đề thành từng câu ngắn độc lập để hiển thị và đọc từng câu riêng biệt
         split_subtitles = self.split_subtitles_into_short_sentences(subtitles)
 
@@ -412,7 +434,7 @@ class VietnameseTTSSynchronizer:
                     texts=b_texts, voice=self.tts_config.voice,
                     resource_id=self.tts_config.resource_id, rate=self.tts_config.rate,
                     max_retries=1)
-            except JobCancelled:
+            except (JobCancelled, TTSServiceError):
                 raise
             except Exception as error:
                 logger.warning("TTS batch lỗi, sẽ thử lại từng câu: %s", error)
@@ -435,44 +457,55 @@ class VietnameseTTSSynchronizer:
                     accept_results(b_items, results)
             missing = [str(item.index) for idx, item, _ in valid_items if idx not in audio_dict]
             if missing:
-                raise RuntimeError("TTS thất bại ở câu: " + ", ".join(missing) +
+                preview = ", ".join(missing[:10]) + (", …" if len(missing) > 10 else "")
+                raise RuntimeError(f"TTS chưa tạo được audio cho {len(missing)}/{len(valid_items)} câu. "
+                                   "Câu lỗi: " + preview +
                                    ". Chạy lại để thử các câu lỗi; audio thành công đã được lưu.")
 
-        # 3. Đồng bộ hóa Audio vào Master Track đảm bảo NÓI TRỌN VẸN HẾT CÂU
+        # 3. Prepare speech, then schedule actual durations. Character-based split
+        # boundaries are estimates, not hard deadlines for individual phrases.
         synced_subtitles: List[SubtitleItem] = []
         global_sub_idx = 1
+        prepared = []
+        previous_preferred_ms = 0
+        for i, (orig_idx, orig_item, _) in enumerate(valid_items):
+            check_cancelled(self.cancel_event)
+            audio_seg = audio_dict[orig_idx]
+            start_ms = round(orig_item.start_seconds * 1000)
+            if start_ms < 0 or orig_item.end_seconds <= orig_item.start_seconds:
+                raise TTSTimingError(f"Câu {orig_item.index} có mốc thời gian không hợp lệ.")
+            # STT blocks may overlap; preserve narration order even when an
+            # estimated split extends past the following block's start.
+            start_ms = max(start_ms, previous_preferred_ms)
+            previous_preferred_ms = start_ms
+            next_start = (round(valid_items[i + 1][1].start_seconds * 1000)
+                          if i + 1 < len(valid_items) else total_ms)
+            slot_ms = max(0, next_start - start_ms)
+            if len(audio_seg) > slot_ms:
+                ratio = min(len(audio_seg) / max(slot_ms - 30, 1), 1.25)
+                audio_seg = self._speed_change_ffmpeg(audio_seg, ratio)
+            prepared.append((orig_item, start_ms, audio_seg))
+
+        # Reserve enough space for the remaining speech at the end. This lets
+        # dense groups borrow nearby silence and recover their original timing.
+        total_ms = max(total_ms, sum(len(audio) for _, _, audio in prepared))
+        latest_starts = [0] * len(prepared)
+        cursor_ms = total_ms
+        for i in range(len(prepared) - 1, -1, -1):
+            cursor_ms -= len(prepared[i][2])
+            latest_starts[i] = cursor_ms
+        master_track = AudioSegment.silent(duration=total_ms)
+        previous_end_ms = 0
 
         with tqdm(total=len(valid_items), desc="[Bước 4.2] Căn Chỉnh Khớp Timeline Tự Nhiên", leave=False) as pbar:
-            for i, (orig_idx, orig_item, clean_text) in enumerate(valid_items):
+            for i, (orig_item, preferred_start_ms, audio_seg) in enumerate(prepared):
                 check_cancelled(self.cancel_event)
-
-                audio_seg = audio_dict[orig_idx]
                 seg_len_ms = len(audio_seg)
-
-                orig_start_ms = int(orig_item.start_seconds * 1000)
-
-                # Xác định thời điểm bắt đầu: không được đè lên câu trước
-                target_start_ms = orig_start_ms
-
-                # Tính slot thời gian cho phép đến câu tiếp theo
-                if i + 1 < len(valid_items):
-                    next_orig_start_ms = int(valid_items[i + 1][1].start_seconds * 1000)
-                    available_slot_ms = min(next_orig_start_ms, total_ms) - target_start_ms
-                else:
-                    available_slot_ms = total_ms - target_start_ms
-                if target_start_ms < 0 or available_slot_ms <= 0:
-                    raise TTSTimingError(f"Câu {orig_item.index} có mốc thời gian không hợp lệ.")
-
-                # Nếu audio dài hơn khoảng thời gian cho phép, tăng tốc nhẹ bằng atempo (giữ pitch) để vừa vặn
-                if seg_len_ms > available_slot_ms:
-                    speed_ratio = min(seg_len_ms / max(available_slot_ms - 30, 1), 1.25)
-                    audio_seg = self._speed_change_ffmpeg(audio_seg, speed_ratio)
-                    seg_len_ms = len(audio_seg)
-                if seg_len_ms > available_slot_ms:
-                    raise TTSTimingError(
-                        f"Câu {orig_item.index} đọc dài {seg_len_ms / 1000:.2f}s nhưng chỉ có "
-                        f"{available_slot_ms / 1000:.2f}s: {orig_item.text}\n"
-                        "Hãy rút gọn câu này trong bản dịch rồi chạy lại. Audio đã tạo được giữ lại.")
+                target_start_ms = max(previous_end_ms, min(preferred_start_ms, latest_starts[i]))
+                if abs(target_start_ms - preferred_start_ms) > 500:
+                    logger.info("Căn lại câu %s: %.2fs → %.2fs để giữ trọn lời đọc.",
+                                orig_item.index, preferred_start_ms / 1000, target_start_ms / 1000)
+                previous_end_ms = target_start_ms + seg_len_ms
 
                 # Đặt audio vào master track
                 master_track = master_track.overlay(audio_seg, position=target_start_ms)

@@ -340,7 +340,7 @@ class DouyinAutoPipeline:
             notify(4, "Bước 4: CapCut TTS & Đồng bộ phụ đề", f"Đang đọc giọng {self.config.tts_config.preset_name or self.config.tts_config.voice} và căn khớp từng câu...")
             console.print(f"[bold cyan]▶ BƯỚC 4: Đọc phụ đề {target_name} bằng TTS ({self.config.tts_config.preset_name}) & đồng bộ timeline từng câu ngắn...[/bold cyan]")
             tts_key = [signature(raw_vietnamese_srt.read_text(encoding="utf-8")),
-                       asdict(self.config.tts_config), total_duration, "strict-slots-v1",
+                       asdict(self.config.tts_config), total_duration, "adaptive-speech-timeline-v2",
                        self.tts_syncer.engine._model_signature()
                        if hasattr(self.tts_syncer.engine, "_model_signature") else None]
             self._stage(state, "tts", tts_key, lambda: (self.tts_syncer.generate_and_sync(
