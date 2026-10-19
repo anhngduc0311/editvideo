@@ -19,6 +19,7 @@ onnxruntime>=1.15.0
 # AI Speech-to-Text & Translation
 SpeechRecognition>=3.10.0
 openai-whisper>=20231117
+faster-whisper>=1.2.1,<2
 google-generativeai>=0.8.0
 gemini-webapi>=2.1.1,<3
 

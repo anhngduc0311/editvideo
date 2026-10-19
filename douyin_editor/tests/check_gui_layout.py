@@ -58,10 +58,13 @@ with tempfile.TemporaryDirectory() as directory:
                 config = factory.call_args.kwargs["config"]
                 assert config.whisper_language == "en"
                 assert config.target_language == "ja"
+                assert config.whisper_model_size == "base"
+                assert config.stt_engine == "auto"
                 assert app_gui.get_tts_language(config.tts_config.voice) == "ja"
                 assert config.cookie_config.cookie_str is None
             app._load_saved_settings()
             assert app.saved_translation_mode == mode
+            assert app.saved_stt_mode == "Nhanh · Faster Whisper base"
             assert app_gui.get_tts_language(app.saved_voice) == "ja"
             app.seg_provider.set("Gemini Cookie")
             app._on_provider_changed("Gemini Cookie")
@@ -98,6 +101,29 @@ with tempfile.TemporaryDirectory() as directory:
                 app.update()
                 assert app.lbl_api_status.cget("text") == "Session expired"
                 assert app.btn_check_key.cget("state") == "normal"
+            app.chk_blur.deselect()
+            app._on_blur_toggled()
+            assert app.chk_interactive_roi.get() == 0
+            assert app.chk_interactive_roi.cget("state") == "disabled"
+            assert app.btn_open_roi_selector.cget("state") == "disabled"
+            with patch.object(app_gui, "VisualROISelectorDialog") as dialog:
+                app._open_visual_roi_selector()
+                dialog.assert_not_called()
+            # A stale/programmatic checkbox value must not open the dialog either.
+            app.chk_interactive_roi.select()
+            with patch.object(app_gui, "DouyinAutoPipeline") as factory, patch.object(app_gui.threading, "Thread") as thread, patch.object(app_gui.messagebox, "showinfo"):
+                factory.return_value.run.return_value = Path(directory) / "no_blur.mp4"
+                thread.side_effect = lambda target, daemon: Mock(start=target)
+                app._start_pipeline()
+                app.update()
+                config = factory.call_args.kwargs["config"]
+                assert config.blur_region.enabled is False
+                assert config.blur_region is not app.current_blur_region
+                assert factory.return_value.run.call_args.kwargs["interactive_roi_callback"] is None
+            app.chk_blur.select()
+            app._on_blur_toggled()
+            assert app.chk_interactive_roi.cget("state") == "normal"
+            assert app.btn_open_roi_selector.cget("state") == "normal"
             print("PASS: layouts and progress states")
         finally:
             app.destroy()

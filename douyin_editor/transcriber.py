@@ -1,6 +1,6 @@
 """
 transcriber.py - Speech-to-Text with Multi-Engine Support (Whisper AI + High-Speed VAD Web Speech + Chunked Gemini STT)
-Đảm bảo nhận diện chính xác 100% dòng thời gian từ đầu đến cuối video, không bị mất phụ đề hay ngắt quãng.
+Faster Whisper INT8 is preferred for efficient local recognition.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ import sys
 import time
 from typing import List, Optional, Tuple
 import requests
+import numpy as np
 from tqdm import tqdm
 
 from config import PipelineConfig
@@ -63,6 +64,55 @@ class WhisperTranscriber:
         self.language = config.whisper_language
         self._whisper_module = None
         self._model = None
+        self._fast_model = None
+
+    def _transcribe_with_faster_whisper(self, audio_path: Path) -> List[SubtitleItem]:
+        from faster_whisper import WhisperModel
+
+        model_name = self.model_size
+        if self.language == "en" and model_name in ("tiny", "base", "small", "medium"):
+            model_name += ".en"
+        if self._fast_model is None:
+            logger.info("[Bước 2.3] Faster Whisper %s · CPU INT8 (lần đầu cần tải model)", model_name)
+            self._fast_model = WhisperModel(
+                model_name, device="cpu", compute_type="int8",
+                cpu_threads=min(8, os.cpu_count() or 4), num_workers=1,
+            )
+        segments, info = self._fast_model.transcribe(
+            self._load_stt_audio(audio_path), language=self.language, task="transcribe",
+            beam_size=1, best_of=1, temperature=0.0,
+            vad_filter=True, condition_on_previous_text=False,
+            word_timestamps=False,
+        )
+        items = []
+        # The generator performs recognition as it is consumed. VAD timestamps
+        # are restored by faster-whisper to the original audio timeline.
+        with tqdm(total=info.duration, unit="s", desc="[Bước 2.3] Faster Whisper INT8", leave=False) as pbar:
+            for segment in segments:
+                text = segment.text.strip()
+                if text and segment.end > segment.start:
+                    items.append(SubtitleItem(
+                        index=len(items) + 1, start_seconds=segment.start, end_seconds=segment.end,
+                        start_str=self.format_timestamp(segment.start),
+                        end_str=self.format_timestamp(segment.end), text=text,
+                    ))
+                pbar.update(max(0.0, min(segment.end, info.duration) - pbar.n))
+            pbar.update(max(0.0, info.duration - pbar.n))
+        return items
+
+    @staticmethod
+    def _load_stt_audio(audio_path: Path):
+        # Pass normalized samples directly. This also avoids decoder API changes
+        # between PyAV releases (e.g. metadata_errors removed in PyAV 19).
+        result = subprocess.run(
+            [shutil.which("ffmpeg") or "ffmpeg", "-v", "error", "-i", str(audio_path),
+             "-vn", "-ac", "1", "-ar", "16000", "-f", "f32le", "pipe:1"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+        )
+        samples = np.frombuffer(result.stdout, dtype="<f4")
+        if not samples.size:
+            raise ValueError("File âm thanh không có dữ liệu để nhận diện.")
+        return samples
 
     def _is_local_whisper_available(self) -> bool:
         """Kiểm tra xem thư viện openai-whisper có khả dụng không"""
@@ -385,10 +435,22 @@ class WhisperTranscriber:
             raise FileNotFoundError(f"Không tìm thấy file audio: {audio_path}")
 
         items: List[SubtitleItem] = []
-        if self._is_local_whisper_available():
+        engine = self.config.stt_engine
+        if engine not in ("auto", "faster", "whisper"):
+            raise ValueError(f"Chế độ nhận diện không hợp lệ: {engine}")
+        fast_completed = False
+        if engine in ("auto", "faster"):
+            try:
+                items = self._transcribe_with_faster_whisper(audio_path)
+                fast_completed = True
+            except Exception as exc:
+                if engine == "faster":
+                    raise RuntimeError("Không chạy được Faster Whisper. Kiểm tra thư viện/model hoặc chọn Whisper gốc.") from exc
+                logger.warning("Faster Whisper không khả dụng (%s); chuyển sang bộ nhận diện dự phòng.", exc)
+        if not fast_completed and self._is_local_whisper_available():
             logger.info("Phát hiện thư viện Whisper cục bộ. Đang chạy Local Whisper STT...")
             items = self._transcribe_with_local_whisper(audio_path)
-        else:
+        elif not fast_completed:
             try:
                 # Ưu tiên Web Speech VAD STT (tốc độ cao, chính xác 100% mốc thời gian)
                 items = self._transcribe_with_web_speech(audio_path)
@@ -400,7 +462,7 @@ class WhisperTranscriber:
                     raise e
 
         if not items:
-            logger.warning("Không nhận diện được giọng nói trong audio!")
+            raise RuntimeError("Không nhận diện được lời thoại. Thử chế độ Cân bằng (small) hoặc kiểm tra âm thanh nguồn.")
 
         srt_blocks = [item.to_srt_block() for item in items]
         full_srt_text = "\n".join(srt_blocks).strip() + "\n"

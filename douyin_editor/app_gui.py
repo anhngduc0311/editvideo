@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+import tempfile
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import webbrowser
@@ -19,9 +20,10 @@ import customtkinter as ctk
 import copy
 from typing import Callable, Dict, List, Optional, Tuple
 
-from config import BlurRegion, CookieConfig, PipelineConfig, SubtitleStyle, SUBTITLE_PRESETS, TTSConfig, VOICE_PRESETS, TRANSLATION_MODES, get_tts_language
+from config import BlurRegion, CookieConfig, PipelineConfig, SubtitleStyle, SUBTITLE_PRESETS, TTSConfig, VOICE_PRESETS, TRANSLATION_MODES, STT_MODES, get_tts_language
 from pipeline import DouyinAutoPipeline
 from roi_selector import VisualROISelectorDialog
+from cookie_storage import protect_cookies, unprotect_cookies, CookieStorageError
 
 # Thiết lập giao diện CustomTkinter
 ctk.set_appearance_mode("Dark")
@@ -68,6 +70,7 @@ class DouyinEditorApp(ctk.CTk):
         self._load_saved_settings()
 
         self._build_ui()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _load_saved_settings(self):
         """Đọc cài đặt đã lưu (API Key, Cookie, v.v.)"""
@@ -78,12 +81,15 @@ class DouyinEditorApp(ctk.CTk):
         self.saved_gemini_model = "gemini-3.6-flash"
         self.saved_gemini_psid = os.getenv("GEMINI_1PSID", "")
         self.saved_gemini_psidts = os.getenv("GEMINI_1PSIDTS", "")
+        self.saved_gemini_cookie_protected = ""
+        self.saved_gemini_cookie_error = ""
         self._active_provider = None
         self.saved_keep_bgm = False
         self.saved_vocal_model = "MDX-Net Inst HQ 3 (Chuẩn - Khuyên dùng cho Nhạc Nền)"
         self.saved_vocal_speed = "⚡ Siêu Tốc (Turbo 0% Overlap - ~2.5x real-time)"
         self.saved_voice = "🔥 Cô Gái Hoạt Ngôn (CapCut Chính Chủ)"
         self.saved_translation_mode = ""
+        self.saved_stt_mode = next(iter(STT_MODES))
         if CONFIG_FILE.exists():
             try:
                 data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
@@ -100,6 +106,13 @@ class DouyinEditorApp(ctk.CTk):
                 self.saved_vocal_speed = data.get("vocal_speed", self.saved_vocal_speed)
                 self.saved_voice = data.get("tts_voice", self.saved_voice)
                 self.saved_translation_mode = data.get("translation_mode", "")
+                self.saved_stt_mode = data.get("stt_mode", self.saved_stt_mode)
+                self.saved_gemini_cookie_protected = data.get("gemini_cookie_protected", "")
+                if self.saved_gemini_cookie_protected:
+                    try:
+                        self.saved_gemini_psid, self.saved_gemini_psidts = unprotect_cookies(self.saved_gemini_cookie_protected)
+                    except CookieStorageError as exc:
+                        self.saved_gemini_cookie_error = str(exc)
             except Exception:
                 pass
 
@@ -108,6 +121,11 @@ class DouyinEditorApp(ctk.CTk):
         try:
             cur_provider = self._selected_provider()
             self._capture_provider_inputs()
+            protected_cookie = self.saved_gemini_cookie_protected
+            if self.saved_gemini_psid:
+                from gemini_cookie import parse_gemini_cookies
+                psid, psidts = parse_gemini_cookies(self.saved_gemini_psid, self.saved_gemini_psidts)
+                protected_cookie = protect_cookies(psid, psidts)
 
             data = {
                 "llm_provider": cur_provider,
@@ -123,10 +141,39 @@ class DouyinEditorApp(ctk.CTk):
                 "vocal_speed": self.cmb_vocal_speed.get() if hasattr(self, "cmb_vocal_speed") else self.saved_vocal_speed,
                 "tts_voice": self.cmb_voice.get() if hasattr(self, "cmb_voice") else self.saved_voice,
                 "translation_mode": self.cmb_translation_mode.get() if hasattr(self, "cmb_translation_mode") else self.saved_translation_mode,
+                "stt_mode": self.cmb_stt_mode.get() if hasattr(self, "cmb_stt_mode") else self.saved_stt_mode,
             }
-            CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            if protected_cookie:
+                data["gemini_cookie_protected"] = protected_cookie
+            # Replace atomically so an interrupted save cannot truncate credentials.
+            temporary_path = None
+            try:
+                with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=CONFIG_FILE.parent,
+                                                 prefix=CONFIG_FILE.name + ".", suffix=".tmp", delete=False) as stream:
+                    temporary_path = Path(stream.name)
+                    json.dump(data, stream, ensure_ascii=False, indent=2)
+                os.replace(temporary_path, CONFIG_FILE)
+            finally:
+                if temporary_path is not None and temporary_path.exists():
+                    temporary_path.unlink()
+            self.saved_gemini_cookie_protected = protected_cookie
+            self.settings_save_error = ""
+            if hasattr(self, "lbl_cookie_storage_status"):
+                self.lbl_cookie_storage_status.configure(
+                    text="Đã lưu cookie mã hóa · Tự khôi phục khi mở lại." if protected_cookie else "Chưa có cookie được lưu.",
+                    text_color="#6ee7b7" if protected_cookie else "#94a3b8",
+                )
+            return True
         except Exception:
-            pass
+            self.settings_save_error = "Không lưu được cài đặt/cookie. Kiểm tra quyền ghi và tài khoản Windows hiện tại."
+            if hasattr(self, "lbl_cookie_storage_status"):
+                self.lbl_cookie_storage_status.configure(text=self.settings_save_error, text_color="#fda4af")
+            return False
+
+    def _on_close(self):
+        if not self._save_settings():
+            messagebox.showerror("Không lưu được cài đặt", self.settings_save_error)
+        self.destroy()
 
     def _build_ui(self):
         self.grid_columnconfigure(0, weight=3, minsize=650)
@@ -221,6 +268,11 @@ class DouyinEditorApp(ctk.CTk):
         self.cmb_translation_mode.set(self.saved_translation_mode if self.saved_translation_mode in TRANSLATION_MODES else default_mode)
         self.cmb_translation_mode.pack(fill="x", padx=12, pady=(2, 6))
         ctk.CTkLabel(language_card, text="Áp dụng cho nhận diện lời thoại, bản dịch và giọng đọc.", font=ctk.CTkFont(size=12), text_color="#94a3b8").pack(anchor="w", padx=12, pady=(0, 10))
+        ctk.CTkLabel(language_card, text="Nhận diện lời thoại · Bước 2.3", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w", padx=12, pady=(4, 4))
+        self.cmb_stt_mode = ctk.CTkComboBox(language_card, values=list(STT_MODES), state="readonly")
+        self.cmb_stt_mode.set(self.saved_stt_mode if self.saved_stt_mode in STT_MODES else next(iter(STT_MODES)))
+        self.cmb_stt_mode.pack(fill="x", padx=12, pady=(2, 6))
+        ctk.CTkLabel(language_card, text="Base: nhanh hơn · Small: chính xác hơn · Tiny: nhanh nhất, dễ sai hơn.\nLần đầu cần tải model. Thiết lập áp dụng cho lượt xử lý tiếp theo.", justify="left", font=ctk.CTkFont(size=11), text_color="#94a3b8").pack(anchor="w", padx=12, pady=(0, 12))
 
         # 2. Card Cookie Douyin
         cookie_card = ctk.CTkFrame(left_scroll, corner_radius=8)
@@ -339,8 +391,20 @@ class DouyinEditorApp(ctk.CTk):
         ctk.CTkLabel(self.cookie_ts_row, text="__Secure-1PSIDTS (nếu có)", anchor="w").pack(fill="x")
         self.gemini_psidts_entry = ctk.CTkEntry(self.cookie_ts_row, show="•", placeholder_text="Cookie bổ sung của phiên Gemini")
         self.gemini_psidts_entry.pack(fill="x", pady=(2, 6))
-        ctk.CTkButton(self.cookie_ts_row, text="Hướng dẫn lấy cookie", width=160,
-                      command=self._show_gemini_cookie_help).pack(anchor="w")
+        cookie_actions = ctk.CTkFrame(self.cookie_ts_row, fg_color="transparent")
+        cookie_actions.pack(fill="x")
+        self.btn_save_gemini_cookie = ctk.CTkButton(cookie_actions, text="Lưu cookie", width=110,
+                                                   command=self._save_gemini_cookie_clicked)
+        self.btn_save_gemini_cookie.pack(side="left", padx=(0, 6))
+        ctk.CTkButton(cookie_actions, text="Xóa đã lưu", width=100,
+                      command=self._forget_gemini_cookie_clicked).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(cookie_actions, text="Hướng dẫn lấy cookie", width=160,
+                      command=self._show_gemini_cookie_help).pack(side="left")
+        self.lbl_cookie_storage_status = ctk.CTkLabel(
+            self.cookie_ts_row, text=self.saved_gemini_cookie_error or ("Đã khôi phục cookie đã lưu." if self.saved_gemini_cookie_protected else "Bấm Lưu cookie để nhớ cho lần mở sau."),
+            font=ctk.CTkFont(size=11), anchor="w", wraplength=480, justify="left",
+        )
+        self.lbl_cookie_storage_status.pack(fill="x", pady=(4, 2))
 
         # Model Selector & Test Row
         model_row = ctk.CTkFrame(key_card, fg_color="transparent")
@@ -419,7 +483,7 @@ class DouyinEditorApp(ctk.CTk):
         self.slider_final_speed.pack(fill="x", padx=12, pady=(0, 8))
 
         # Checkbox Blur
-        self.chk_blur = ctk.CTkCheckBox(video_card, text="Làm mờ phụ đề tiếng Trung gốc (Boxblur)", font=ctk.CTkFont(weight="bold"))
+        self.chk_blur = ctk.CTkCheckBox(video_card, text="Làm mờ phụ đề gốc (Boxblur)", font=ctk.CTkFont(weight="bold"), command=self._on_blur_toggled)
         self.chk_blur.select()
         self.chk_blur.pack(anchor="w", padx=12, pady=4)
 
@@ -829,6 +893,7 @@ class DouyinEditorApp(ctk.CTk):
         )
         self.btn_play_video.grid(row=0, column=2, sticky="ew", padx=(8, 12), pady=10)
         self._polish_settings(pages)
+        self._on_blur_toggled()
         self._on_provider_changed(self.seg_provider.get())
         self._on_translation_changed(self.cmb_translation_mode.get())
         self._update_sub_preview_banner()
@@ -1077,9 +1142,25 @@ class DouyinEditorApp(ctk.CTk):
             self.saved_gemini_key = self.key_entry.get().strip()
             self.saved_gemini_model = self.cmb_ai_model.get().strip()
         elif provider == "gemini_web":
-            # Keep session credentials in memory; never put them in settings JSON.
+            # Only the DPAPI-protected representation is written to settings.
             self.saved_gemini_psid = self.key_entry.get().strip()
             self.saved_gemini_psidts = self.gemini_psidts_entry.get().strip()
+
+    def _save_gemini_cookie_clicked(self):
+        from gemini_cookie import parse_gemini_cookies, GeminiCookieError
+        try:
+            parse_gemini_cookies(self.key_entry.get(), self.gemini_psidts_entry.get())
+        except GeminiCookieError as exc:
+            self.lbl_cookie_storage_status.configure(text=str(exc), text_color="#fbbf24")
+            return
+        self._save_settings()
+
+    def _forget_gemini_cookie_clicked(self):
+        self.key_entry.delete(0, "end")
+        self.gemini_psidts_entry.delete(0, "end")
+        self.saved_gemini_psid = self.saved_gemini_psidts = ""
+        self.saved_gemini_cookie_protected = self.saved_gemini_cookie_error = ""
+        self._save_settings()
 
     def _show_gemini_cookie_help(self):
         messagebox.showinfo("Đăng nhập Gemini bằng cookie", (
@@ -1088,7 +1169,8 @@ class DouyinEditorApp(ctk.CTk):
             "3. Sao chép giá trị __Secure-1PSID vào ô đầu.\n"
             "4. Nếu có __Secure-1PSIDTS, sao chép vào ô thứ hai.\n"
             "5. Bấm Kiểm tra kết nối. Không cần API key trong chế độ này.\n\n"
-            "Cookie được giữ trong bộ nhớ ứng dụng, không ghi vào file cài đặt. "
+            "Bấm Lưu cookie để nhớ cho lần mở sau. Cookie được mã hóa bằng tài khoản Windows. "
+            "Ứng dụng cũng lưu khi kiểm tra kết nối, bắt đầu xử lý hoặc đóng cửa sổ. "
             "Thư viện có thể lưu cache phiên trên máy. Không chia sẻ cookie với người khác.\n\n"
             "Đây là kết nối Gemini Web không chính thức. Cookie có thể hết hạn; "
             "giới hạn tài khoản, CAPTCHA hoặc chặn tạm thời vẫn có thể xảy ra."
@@ -1116,7 +1198,7 @@ class DouyinEditorApp(ctk.CTk):
             self.cmb_ai_model.configure(values=["Tự động"])
             self.cmb_ai_model.set("Tự động")
             self.cmb_ai_model.configure(state="readonly")
-            self.lbl_api_status.configure(text="Không cần API key · Cookie không ghi vào cài đặt. Phiên vẫn chịu giới hạn của Gemini.", text_color="#94a3b8")
+            self.lbl_api_status.configure(text="Không cần API key · Có thể lưu cookie mã hóa trên máy. Phiên vẫn chịu giới hạn của Gemini.", text_color="#94a3b8")
             return
         if "DeepSeek" in choice:
             self.lbl_key_title.configure(text="🔑 DeepSeek API Key:")
@@ -1215,6 +1297,7 @@ class DouyinEditorApp(ctk.CTk):
         except GeminiCookieError as exc:
             self.lbl_api_status.configure(text=str(exc), text_color="#fbbf24")
             return
+        self._save_settings()
         self.btn_check_key.configure(state="disabled", text="Đang kiểm tra…")
         self.lbl_api_status.configure(text="Đang xác thực phiên Gemini…", text_color="#60a5fa")
 
@@ -1232,6 +1315,16 @@ class DouyinEditorApp(ctk.CTk):
     def _on_speed_changed(self, val: float):
         self.lbl_speed_val.configure(text=f"{val:.2f}x (Chậm {int((1-val)*100)}%)")
 
+    def _on_blur_toggled(self):
+        enabled = bool(self.chk_blur.get())
+        self.current_blur_region.enabled = enabled
+        if not enabled:
+            self.chk_interactive_roi.deselect()
+        state = "normal" if enabled else "disabled"
+        for widget in (self.chk_interactive_roi, self.btn_open_roi_selector,
+                       self.slider_blur_y, self.slider_blur_h):
+            widget.configure(state=state)
+
     def _on_blur_slider_changed(self, _val):
         y_val = self.slider_blur_y.get()
         h_val = self.slider_blur_h.get()
@@ -1246,7 +1339,10 @@ class DouyinEditorApp(ctk.CTk):
 
     def _open_visual_roi_selector(self, video_file: Optional[Path] = None):
         """Mở cửa sổ đồ họa cho phép người dùng kéo chuột khoanh vùng mờ"""
+        if not self.chk_blur.get():
+            return
         def on_saved(region: BlurRegion):
+            region.enabled = bool(self.chk_blur.get())
             self.current_blur_region = region
             self.slider_blur_y.set(region.y_ratio)
             self.slider_blur_h.set(region.height_ratio)
@@ -1410,7 +1506,7 @@ class DouyinEditorApp(ctk.CTk):
         font_name = self.cmb_font.get()
         font_size = int(self.cmb_font_size.get())
         blur_enabled = bool(self.chk_blur.get())
-        is_interactive_roi = bool(self.chk_interactive_roi.get())
+        is_interactive_roi = blur_enabled and bool(self.chk_interactive_roi.get())
 
         # Phân tích mô hình và tốc độ tách AI MDX-Net
         vocal_model_raw = self.cmb_vocal_model.get() if hasattr(self, "cmb_vocal_model") else ""
@@ -1447,6 +1543,8 @@ class DouyinEditorApp(ctk.CTk):
             sub_style.bold = 1 if self.chk_bold_sub.get() else 0
 
         config = PipelineConfig(
+            stt_engine=STT_MODES[self.cmb_stt_mode.get()][0],
+            whisper_model_size=STT_MODES[self.cmb_stt_mode.get()][1],
             whisper_language=TRANSLATION_MODES[self.cmb_translation_mode.get()][0],
             target_language=TRANSLATION_MODES[self.cmb_translation_mode.get()][1],
             llm_provider=cur_provider,
@@ -1465,7 +1563,7 @@ class DouyinEditorApp(ctk.CTk):
             vocal_speed=vocal_speed_code,
             vocal_overlap=vocal_overlap_val,
             cookie_config=cookie_cfg,
-            blur_region=self.current_blur_region,
+            blur_region=copy.copy(self.current_blur_region),
             subtitle_style=sub_style,
             tts_config=TTSConfig(
                 voice=voice_code,

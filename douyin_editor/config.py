@@ -440,6 +440,13 @@ TRANSLATION_MODES = {
     "Tiếng Anh → Tiếng Nhật": ("en", "ja"),
 }
 
+STT_MODES = {
+    "Nhanh · Faster Whisper base": ("auto", "base"),
+    "Cân bằng · Faster Whisper small": ("auto", "small"),
+    "Siêu nhanh · Faster Whisper tiny": ("auto", "tiny"),
+    "Whisper gốc · small": ("whisper", "small"),
+}
+
 
 def get_target_language(config) -> str:
     # Existing CLI callers can continue choosing the target through their voice.
@@ -483,6 +490,7 @@ class PipelineConfig:
     gemini_api_key: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
     gemini_model_name: str = "gemini-3.6-flash"
     whisper_model_size: str = "small"
+    stt_engine: str = "auto"  # Prefer Faster Whisper INT8; fall back to original engines
     whisper_language: str = "zh"
     target_language: Optional[str] = None  # None preserves the voice-based default
     

@@ -8,12 +8,17 @@ Các lựa chọn Trung → Việt, Trung → Nhật và Anh → Nhật đều �
 2. Nhấn **F12**, mở **Application/Storage → Cookies** và chọn miền Google/Gemini.
 3. Sao chép **giá trị** `__Secure-1PSID` vào ô đầu tiên.
 4. Nếu có `__Secure-1PSIDTS`, dán giá trị vào ô thứ hai. Có thể để trống nếu tài khoản không có cookie này.
-5. Bấm **Kiểm tra kết nối**, rồi chạy xử lý video như bình thường.
+5. Bấm **Lưu cookie** để nhớ cho lần mở sau, rồi **Kiểm tra kết nối** và chạy xử lý video.
 
 Ô đầu cũng nhận chuỗi Cookie header chứa hai cookie trên. Nút hình mắt hiển thị/che cả hai ô.
 
-Ứng dụng chỉ giữ giá trị cookie trong bộ nhớ và không ghi vào JSON cài đặt.
-Khi mở lại ứng dụng, nhập lại cookie hoặc cấu hình biến môi trường `GEMINI_1PSID` và `GEMINI_1PSIDTS`.
+Ứng dụng mã hóa cookie bằng Windows DPAPI, lưu trong cài đặt và tự điền lại khi mở ứng dụng.
+Cookie không được ghi dưới dạng văn bản thường. Bản lưu gắn với tài khoản Windows hiện tại;
+chuyển file cài đặt sang tài khoản/máy khác có thể cần nhập lại cookie.
+Ứng dụng cũng lưu khi kiểm tra kết nối, bắt đầu xử lý hoặc đóng cửa sổ bình thường.
+Nút **Xóa đã lưu** xóa cookie do ứng dụng lưu và làm trống hai ô nhập.
+Cookie lưu lại vẫn có thể hết hạn: khi đó, cập nhật giá trị mới và bấm **Lưu cookie**.
+Biến môi trường `GEMINI_1PSID` và `GEMINI_1PSIDTS` vẫn dùng được nếu chưa có bản lưu.
 Thư viện `gemini-webapi` có thể lưu cache phiên trên máy. Cookie là thông tin đăng nhập: không chia sẻ hoặc đưa vào Git.
 
 Để cài các thư viện cần thiết, mở terminal trong thư mục `douyin_editor` và chạy:

@@ -368,7 +368,7 @@ class VisualROISelectorDialog(ctk.CTkToplevel):
             y_ratio=y_ratio,
             height_ratio=height_ratio,
             blur_power=15,
-            enabled=True
+            enabled=self.blur_region.enabled
         )
 
         if self.on_save_callback:

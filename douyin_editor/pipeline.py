@@ -116,7 +116,7 @@ class DouyinAutoPipeline:
             overall_pbar.update(1)
 
             # Người dùng tự chọn vùng làm mờ phụ đề trên video vừa tải (nếu bật)
-            if interactive_roi_callback:
+            if interactive_roi_callback and self.config.blur_region.enabled:
                 notify(2, "Bước 2: Chọn vùng làm mờ", "Vui lòng khoanh vùng phụ đề trên cửa sổ xem trước...")
                 chosen_region = interactive_roi_callback(raw_video, self.config.blur_region)
                 if chosen_region:
