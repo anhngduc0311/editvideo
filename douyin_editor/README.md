@@ -38,6 +38,10 @@ Chủ tài khoản cần thu hồi/thay key trên trang quản lý của nhà cu
 
 ## Hàng đợi nhiều video
 
+Tải YouTube dùng các phần HTTP nhỏ, tự thử lại khi kết nối bị ngắt và giữ file `.part`
+để tải tiếp. Nếu vẫn lỗi, ứng dụng lấy lại đường tải tối đa 3 lượt; lượt cuối tải lại
+phần chưa hoàn tất từ đầu. Chỉ yêu cầu cookie khi thông báo cho thấy video cần đăng nhập.
+
 Dán nhiều link vào ô nguồn, mỗi dòng một link, rồi bấm **Bắt đầu xử lý**.
 Ứng dụng chạy lần lượt theo thứ tự đã dán, bỏ qua link trùng hoàn toàn và hiển thị
 video đang chạy cùng tiến độ toàn hàng đợi. Mọi video dùng bộ cài đặt lúc bấm chạy.

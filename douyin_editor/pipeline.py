@@ -168,7 +168,7 @@ class DouyinAutoPipeline:
             raw_video = self._stage(state, "download", [douyin_url_or_text, custom_name], lambda: [self.downloader.download(
                 douyin_url_or_text,
                 custom_filename=custom_name,
-                progress_callback=lambda p, msg: notify(1, "Bước 1: Tải video Douyin", msg)
+                progress_callback=lambda p, msg: notify(1, "Bước 1: Tải video YouTube / Douyin", msg)
             )])[0]
             video_id = raw_video.stem
             overall_pbar.update(1)

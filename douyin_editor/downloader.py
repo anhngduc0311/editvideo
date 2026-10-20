@@ -149,6 +149,14 @@ class DouyinDownloader:
             "outtmpl": str(self.download_dir / f"{custom_filename or 'youtube_' + video_id}.%(ext)s"),
             "format": "bestvideo+bestaudio/best", "merge_output_format": "mp4",
             "noplaylist": True, "quiet": True,
+            # Unlike the CLI, embedding YoutubeDL does not populate all retry
+            # defaults. Download bounded ranges and retain .part files to resume.
+            "retries": 5, "fragment_retries": 5, "extractor_retries": 3,
+            "socket_timeout": 30, "http_chunk_size": 1024 * 1024,
+            "continuedl": True, "nopart": False, "nocolor": True,
+            "concurrent_fragment_downloads": 1, "skip_unavailable_fragments": False,
+            "retry_sleep_functions": {"http": lambda n: min(n + 1, 3),
+                                      "fragment": lambda n: min(n + 1, 3)},
             "progress_hooks": [report], "post_hooks": [lambda filename: final_paths.append(Path(filename))],
         }
         if not shutil.which("ffmpeg"):
@@ -173,22 +181,56 @@ class DouyinDownloader:
             options["cookiefile"] = str(cookie_file)
         elif self.cookie_config.browser_name:
             options["cookiesfrombrowser"] = (self.cookie_config.browser_name.lower().strip(), None, None, None)
-        try:
-            with yt_dlp.YoutubeDL(options) as ydl:
-                info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
-                if not info or info.get("_type") in ("playlist", "multi_video"):
-                    raise RuntimeError("Liên kết không trả về một video YouTube hợp lệ.")
-                prepared = Path(ydl.prepare_filename(info))
-                candidates = list(reversed(final_paths)) + [prepared.with_suffix(".mp4"), prepared]
-                for candidate in candidates:
-                    if candidate.is_file() and candidate.stat().st_size > 1000:
-                        if progress_callback:
-                            progress_callback(1.0, "Đã tải video YouTube.")
-                        return candidate.resolve()
-                raise RuntimeError("Không tìm thấy file video sau khi tải và ghép luồng.")
-        except yt_dlp.utils.DownloadError as exc:
+        for attempt in range(1, 4):
             check_cancelled(self.cancel_event)
-            raise RuntimeError(f"Không thể tải YouTube: {exc}\nKiểm tra liên kết, cập nhật yt-dlp hoặc chọn file cookie/trình duyệt nếu video cần đăng nhập.") from exc
+            final_paths.clear()
+            attempt_options = dict(options)
+            if attempt == 3:
+                # A stale partial file or range can keep failing at the same
+                # offset. Last attempt restarts incomplete streams, preserving
+                # completed streams and unrelated downloads.
+                attempt_options.update(continuedl=False, http_chunk_size=256 * 1024)
+            try:
+                with yt_dlp.YoutubeDL(attempt_options) as ydl:
+                    info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
+                    check_cancelled(self.cancel_event)
+                    if not info or info.get("_type") in ("playlist", "multi_video"):
+                        raise RuntimeError("Liên kết không trả về một video YouTube hợp lệ.")
+                    prepared = Path(ydl.prepare_filename(info))
+                    candidates = list(reversed(final_paths)) + [prepared.with_suffix(".mp4"), prepared]
+                    for candidate in candidates:
+                        if candidate.is_file() and candidate.stat().st_size > 1000:
+                            if progress_callback:
+                                progress_callback(1.0, "Đã tải video YouTube.")
+                            return candidate.resolve()
+                    raise RuntimeError("Không tìm thấy file video sau khi tải và ghép luồng.")
+            except yt_dlp.utils.DownloadError as exc:
+                check_cancelled(self.cancel_event)
+                detail = re.sub(r"\x1b\[[0-9;]*m", "", str(exc))
+                transient = bool(re.search(
+                    r"bytes read.*more expected|incomplete.?read|content.*too short|timed? out|timeout|"
+                    r"connection.*(?:reset|closed|abort)|remote.*closed|temporar|"
+                    r"http error (?:403|408|429|5\d\d)|unable to download.*data",
+                    detail, re.IGNORECASE))
+                if transient and attempt < 3:
+                    message = (f"Tải YouTube bị ngắt; đang lấy lại đường tải và thử lần {attempt + 1}/3"
+                               + (" từ đầu phần chưa hoàn tất…" if attempt == 2 else " từ phần đã tải…"))
+                    logger.warning(message)
+                    if progress_callback:
+                        progress_callback(0, message)
+                    if self.cancel_event is not None:
+                        self.cancel_event.wait(attempt)
+                        check_cancelled(self.cancel_event)
+                    else:
+                        time.sleep(attempt)
+                    continue
+                if transient:
+                    hint = "Kết nối tải YouTube vẫn bị ngắt sau 3 lượt thử. Phần tải dở được giữ lại để chạy tiếp."
+                elif re.search(r"sign in|log.?in|private video|age.?restrict|members.only", detail, re.IGNORECASE):
+                    hint = "Video yêu cầu quyền truy cập/đăng nhập. Chọn file cookie hoặc trình duyệt đã đăng nhập YouTube."
+                else:
+                    hint = "Kiểm tra video còn xem được trên YouTube và phiên bản yt-dlp đang dùng."
+                raise RuntimeError(f"Không thể tải YouTube: {detail}\n{hint}") from exc
 
     def resolve_redirect_url(self, short_url: str) -> str:
         """Theo dõi redirect của link rút gọn (v.douyin.com/xxxx) để lấy URL gốc có chứa Video ID"""
