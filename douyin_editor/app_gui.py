@@ -22,6 +22,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 from config import BlurRegion, CookieConfig, PipelineConfig, SubtitleStyle, SUBTITLE_PRESETS, TTSConfig, VOICE_PRESETS, TRANSLATION_TOPIC_PRESETS, TRANSLATION_MODES, get_tts_language
 from pipeline import DouyinAutoPipeline
 from job_state import JobCancelled, check_cancelled
+from video_queue import extract_video_urls, run_video_queue
 from credential_store import seal_secrets, open_secrets
 from roi_selector import VisualROISelectorDialog
 from studio_theme import COLORS, apply_studio_theme
@@ -266,6 +267,8 @@ class DouyinEditorApp(ctk.CTk):
         
         self.url_textbox = ctk.CTkTextbox(url_card, height=65, font=ctk.CTkFont(size=12))
         self.url_textbox.pack(fill="x", padx=12, pady=4)
+        ctk.CTkLabel(url_card, text="Dán nhiều link, mỗi dòng một link — tự chạy lần lượt; link trùng chỉ chạy một lần.",
+                     font=ctk.CTkFont(size=11), text_color="#94A6C0").pack(anchor="w", padx=12)
 
         btn_url_row = ctk.CTkFrame(url_card, fg_color="transparent")
         btn_url_row.pack(fill="x", padx=12, pady=(4, 10))
@@ -1206,6 +1209,12 @@ class DouyinEditorApp(ctk.CTk):
         host = (urlparse(match.group(0)).hostname or "").lower() if match else ""
         source = "YouTube" if host == "youtu.be" or host.endswith(".youtu.be") or host == "youtube.com" or host.endswith(".youtube.com") else (
             "Douyin" if host == "douyin.com" or host.endswith(".douyin.com") else "Đã thêm liên kết" if raw else "Chưa thêm video")
+        try:
+            count = len(extract_video_urls(raw))
+            if count > 1:
+                source = f"Hàng đợi · {count} video"
+        except ValueError:
+            pass
         voice = self.cmb_voice.get()
         # Keep the summary readable while preserving full preset names in controls.
         for prefix in ("🎮 ", "🔥 ", "🌸 ", "✨ ", "🎙️ ", "⚡ "):
@@ -1800,18 +1809,20 @@ class DouyinEditorApp(ctk.CTk):
         self.log_textbox.insert("end", formatted_msg, level if level in ("ERROR", "WARNING", "SUCCESS") else None)
         self.log_textbox.see("end")
 
-    def _update_step_status(self, current_step: int, total_steps: int, title: str, msg: str):
+    def _update_step_status(self, current_step: int, total_steps: int, title: str, msg: str,
+                            video_number: int = 1, video_total: int = 1):
         def gui_update():
+            prefix = f"Video {video_number}/{video_total} · " if video_total > 1 else ""
             if current_step == -1:
-                self.lbl_status.configure(text=f"❌ LỖI: {title}", text_color="#ef4444")
+                self.lbl_status.configure(text=f"{prefix}❌ LỖI: {title}", text_color="#ef4444")
                 self._append_log(f"{title}: {msg}", "ERROR")
                 return
 
-            fraction = min(max(current_step / total_steps, 0.0), 1.0)
+            fraction = (video_number - 1 + min(max(current_step / total_steps, 0.0), 1.0)) / video_total
             self.progress_bar.set(fraction)
             self.lbl_progress_percent.configure(text=f"{fraction:.0%}")
             self.lbl_status.configure(
-                text=f"Đang xử lý [{current_step}/{total_steps}]: {title}",
+                text=f"{prefix}Đang xử lý [{current_step}/{total_steps}]: {title}",
                 text_color="#8BB5FF"
             )
             self._append_log(f"{title} - {msg}", "INFO")
@@ -1828,7 +1839,7 @@ class DouyinEditorApp(ctk.CTk):
             if current_step == total_steps:
                 for lbl in self.step_labels:
                     lbl.configure(text=f"✔ {lbl.cget('text')[2:]}", text_color="#39C6A3")
-                self.lbl_status.configure(text="🎉 ĐÃ HOÀN THÀNH TOÀN BỘ QUY TRÌNH!", text_color="#39C6A3")
+                self.lbl_status.configure(text=f"{prefix}Đã xử lý xong video.", text_color="#39C6A3")
 
         self.after(0, gui_update)
 
@@ -1856,6 +1867,12 @@ class DouyinEditorApp(ctk.CTk):
         raw_url = self.url_textbox.get("1.0", "end").strip()
         if not raw_url:
             messagebox.showwarning("Cảnh báo", "Vui lòng nhập đường link video YouTube hoặc Douyin!")
+            return
+
+        try:
+            video_urls = extract_video_urls(raw_url)
+        except ValueError as error:
+            messagebox.showwarning("Kiểm tra liên kết", str(error))
             return
 
         # Xác định AI Provider được chọn
@@ -2038,6 +2055,10 @@ class DouyinEditorApp(ctk.CTk):
             lbl.configure(text=f"⚪ {lbl.cget('text')[2:]}", text_color="#94A6C0")
 
         self._append_log("Bắt đầu khởi chạy quy trình tự động hóa...", "START")
+        self._append_log(f"Hàng đợi: {len(video_urls)} video, xử lý lần lượt theo thứ tự đã dán.", "INFO")
+        if len(video_urls) > 1 and is_interactive_roi:
+            self._append_log("Đang bật chỉnh vùng trực quan: mỗi video sẽ chờ bạn chọn vùng. "
+                             "Tắt tùy chọn này trước khi chạy nếu muốn hàng đợi tự động hoàn toàn.", "WARNING")
 
         def interactive_roi_hook(raw_video_path: Path, current_region: BlurRegion, current_sub_style: Optional[SubtitleStyle] = None) -> Tuple[BlurRegion, Optional[SubtitleStyle], bool]:
             """Hàm hook chặn luồng xử lý để mở Studio chọn vùng mờ & chỉnh tay phụ đề trên video vừa tải"""
@@ -2130,21 +2151,48 @@ class DouyinEditorApp(ctk.CTk):
 
         def worker():
             try:
-                pipeline = DouyinAutoPipeline(config=config)
-                final_video = pipeline.run(
-                    douyin_url_or_text=raw_url,
-                    progress_callback=self._update_step_status,
+                def on_start(number, total, url):
+                    def update():
+                        self.btn_run.configure(text=f"Đang xử lý {number}/{total}…")
+                        self.lbl_status.configure(text=f"Video {number}/{total} · Đang bắt đầu", text_color="#8BB5FF")
+                        self.progress_bar.set((number - 1) / total)
+                        self.lbl_progress_percent.configure(text=f"{(number - 1) / total:.0%}")
+                        for label in self.step_labels:
+                            label.configure(text=f"⚪ {label.cget('text')[2:]}", text_color="#94A6C0")
+                        self._append_log(f"Video {number}/{total}: {url}", "START")
+                    self.after(0, update)
+
+                def on_complete(number, total, url, output):
+                    self.last_output_video = output
+                    self.after(0, lambda: self._append_log(f"Video {number}/{total} hoàn tất: {output.name}", "SUCCESS"))
+
+                def on_error(number, total, url, error):
+                    self.after(0, lambda: self._append_log(
+                        f"Video {number}/{total} lỗi: {url}\n{error}\nTiếp tục link kế tiếp nếu còn.", "ERROR"))
+
+                result = run_video_queue(
+                    video_urls, config, DouyinAutoPipeline,
+                    progress_callback=lambda number, total, *args: self._update_step_status(
+                        *args, video_number=number, video_total=total),
                     interactive_roi_callback=interactive_roi_hook if is_interactive_roi else None,
                     cancel_event=self.cancel_event,
+                    on_start=on_start, on_complete=on_complete, on_error=on_error,
                 )
-                self.last_output_video = final_video
 
                 def on_success():
                     self.is_running = False
                     self.btn_cancel.configure(state="disabled")
                     self.btn_run.configure(text="Bắt đầu xử lý  →", state="normal", fg_color="#528BFF")
-                    self.btn_play_video.configure(state="normal")
-                    messagebox.showinfo("Thành công", f"Đã edit và dịch video thành công!\n\nFile lưu tại: {final_video.name}")
+                    self.btn_play_video.configure(state="normal" if self.last_output_video else "disabled")
+                    self.progress_bar.set(1.0)
+                    self.lbl_progress_percent.configure(text="100%")
+                    summary = f"Đã xử lý {len(video_urls)} video: {len(result.completed)} thành công, {len(result.failed)} lỗi."
+                    self.lbl_status.configure(text=summary, text_color="#fbbf24" if result.failed else "#39C6A3")
+                    details = "\n".join(f"{url}\n{error}" for url, error in result.failed[:5])
+                    if result.failed:
+                        messagebox.showwarning("Hàng đợi đã kết thúc", summary + "\n\nLink lỗi:\n" + details)
+                    else:
+                        messagebox.showinfo("Thành công", summary + f"\n\nThư mục video: {config.output_dir.resolve()}")
 
                 self.after(0, on_success)
 
@@ -2153,6 +2201,7 @@ class DouyinEditorApp(ctk.CTk):
                     self.is_running = False
                     self.btn_cancel.configure(state="disabled")
                     self.btn_run.configure(text="Tiếp tục xử lý  →", state="normal", fg_color="#528BFF")
+                    self.btn_play_video.configure(state="normal" if self.last_output_video else "disabled")
                     self.lbl_status.configure(text="Đã hủy. Bấm tiếp tục để dùng lại các bước hoàn tất.")
                     self._append_log("Đã hủy; dữ liệu hoàn tất được giữ lại.", "WARNING")
                 self.after(0, on_cancel)

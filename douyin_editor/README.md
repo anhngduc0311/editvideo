@@ -36,6 +36,19 @@ Không sao chép file cấu hình sang máy khác để chia sẻ thông tin đ�
 Nếu API key cũ đã xuất hiện trong lịch sử Git, xóa khỏi mã nguồn không thu hồi key đó.
 Chủ tài khoản cần thu hồi/thay key trên trang quản lý của nhà cung cấp.
 
+## Hàng đợi nhiều video
+
+Dán nhiều link vào ô nguồn, mỗi dòng một link, rồi bấm **Bắt đầu xử lý**.
+Ứng dụng chạy lần lượt theo thứ tự đã dán, bỏ qua link trùng hoàn toàn và hiển thị
+video đang chạy cùng tiến độ toàn hàng đợi. Mọi video dùng bộ cài đặt lúc bấm chạy.
+Một video lỗi sẽ được ghi vào nhật ký rồi chuyển sang link tiếp theo; chỉ hiện bảng
+tổng kết một lần khi hết hàng đợi. Nút phát mở video thành công gần nhất.
+
+Để chạy tự động hoàn toàn, tắt **chỉnh vùng trực quan** trước khi bắt đầu;
+nếu bật thì mỗi video vẫn chờ chọn vùng mờ/phụ đề. **Hủy** dừng video hiện tại
+và không bắt đầu link tiếp theo. Dữ liệu đã hoàn tất được giữ lại; chạy lại cùng
+danh sách với tùy chọn **Tiếp tục các bước đã hoàn tất** để dùng lại kết quả.
+
 ## Dịch bằng ChatGPT Web
 
 ChatGPT Web tự chia phụ đề để mỗi lượt gửi tối đa **5.000 từ**, tính cả yêu cầu dịch
