@@ -36,6 +36,16 @@ Không sao chép file cấu hình sang máy khác để chia sẻ thông tin đ�
 Nếu API key cũ đã xuất hiện trong lịch sử Git, xóa khỏi mã nguồn không thu hồi key đó.
 Chủ tài khoản cần thu hồi/thay key trên trang quản lý của nhà cung cấp.
 
+## Dịch bằng ChatGPT Web
+
+ChatGPT Web tự chia phụ đề để mỗi lượt gửi tối đa **5.000 từ**, tính cả yêu cầu dịch
+và bối cảnh (đếm theo khoảng trắng, không phải token). Video dài được dịch qua nhiều lượt;
+giữ nguyên index và thời gian phụ đề. Bối cảnh được rút gọn khi cần, không cắt nội dung
+các câu cần dịch. Nếu một câu hoặc yêu cầu tùy chỉnh quá dài, ứng dụng báo để rút gọn.
+Bản dịch được yêu cầu tự nhiên, cuốn hút, có nhịp kể giữ chân người xem, đúng ý gốc,
+không bịa tình tiết hoặc thêm lời câu tương tác. Có thể đặt `chatgpt_batch_size` lớn hơn 0
+trong cấu hình Python để giới hạn thêm số câu mỗi đoạn; mặc định là 0 (tự chia theo số từ).
+
 ## Duyệt, hủy và tiếp tục
 
 - **Duyệt bản dịch trước khi tạo giọng**: bật mặc định. Sửa lời dịch ở cột bên phải,

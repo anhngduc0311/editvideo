@@ -34,6 +34,77 @@ from transcriber import SubtitleItem
 
 logger = logging.getLogger(__name__)
 
+# Application limit, counted as whitespace-separated words (not model tokens).
+CHATGPT_WEB_MAX_WORDS = 5000
+CHATGPT_RETRY_RESERVE_WORDS = 100
+
+
+def build_chatgpt_system_instruction(config: PipelineConfig) -> str:
+    return build_translation_system_instruction(config) + (
+        "\n\nYÊU CẦU CHẤT LƯỢNG BẢN DỊCH CHATGPT WEB (ƯU TIÊN):\n"
+        "Dịch hay, tự nhiên như người bản ngữ kể chuyện, dễ nghe và giữ chân người xem. "
+        "Mở đầu gọn, khơi gợi tò mò từ chính tình huống gốc; nối ý mượt, "
+        "giữ nhịp nhanh ở hành động và ngắt nghỉ ở cảm xúc, cao trào. "
+        "Chọn từ sinh động, tránh dịch máy, dài dòng, lặp ý hoặc lạm dụng tiếng lóng. "
+        "Giữ đúng ý nghĩa, sự kiện, tên riêng, quan hệ nhân vật và thứ tự tiết lộ của bản gốc. "
+        "Không bịa hook, thêm tình tiết, câu hỏi, lời kêu gọi tương tác hay tiết lộ kết cục sớm. "
+        "Nếu yêu cầu giật gân ở trên mâu thuẫn với nội dung gốc, ưu tiên sự chính xác. "
+        "Giữ nguyên từng index, không gộp/tách câu; câu dịch vừa thời lượng phụ đề, "
+        "có dấu câu tự nhiên để lồng tiếng truyền cảm. Chỉ xuất các dòng bản dịch được yêu cầu."
+    )
+
+
+def build_chatgpt_batches(items: List[SubtitleItem], config: PipelineConfig) -> List[List[SubtitleItem]]:
+    """Pack complete subtitles into requests, reserving room for repair instructions."""
+    system = build_chatgpt_system_instruction(config)
+    line_limit = max(0, int(getattr(config, "chatgpt_batch_size", 0) or 0))
+    batches: List[List[SubtitleItem]] = []
+    batch: List[SubtitleItem] = []
+
+    def fits(candidate):
+        prompt = build_batch_prompt(candidate, target_language=get_target_language(config),
+                                    source_language=config.whisper_language)
+        return len((system + "\n\n" + prompt).split()) <= CHATGPT_WEB_MAX_WORDS - CHATGPT_RETRY_RESERVE_WORDS
+
+    for item in items:
+        if batch and ((line_limit and len(batch) >= line_limit) or not fits(batch + [item])):
+            batches.append(batch)
+            batch = []
+        if not batch and not fits([item]):
+            raise ValueError(
+                f"Câu phụ đề [{item.index}] hoặc yêu cầu dịch quá dài cho giới hạn 5.000 từ/lượt. "
+                "Hãy chia nhỏ câu phụ đề hoặc rút gọn yêu cầu tùy chỉnh."
+            )
+        batch.append(item)
+    if batch:
+        batches.append(batch)
+    return batches
+
+
+def fit_chatgpt_story_context(batch: List[SubtitleItem], story: str, config: PipelineConfig) -> str:
+    """Keep opening/ending context within the request budget; never truncate source subtitles."""
+    system = build_chatgpt_system_instruction(config)
+    words = story.split()
+
+    def context(size):
+        if size >= len(words):
+            return story
+        head = (size + 1) // 2
+        tail = size // 2
+        return " ".join(words[:head] + ["…"] + (words[-tail:] if tail else [])) if size else ""
+
+    low, high = 0, len(words)
+    while low < high:
+        mid = (low + high + 1) // 2
+        prompt = build_batch_prompt(batch, full_story_context=context(mid),
+                                    target_language=get_target_language(config),
+                                    source_language=config.whisper_language)
+        if len((system + "\n\n" + prompt).split()) <= CHATGPT_WEB_MAX_WORDS - CHATGPT_RETRY_RESERVE_WORDS:
+            low = mid
+        else:
+            high = mid - 1
+    return context(low)
+
 
 def polish_story_translation_item(text: str) -> str:
     """
@@ -892,11 +963,13 @@ class ChatGPTWebTranslator:
 
     def _call_chatgpt_web(self, prompt: str, timeout: int = 120, max_retries: int = 3) -> str:
         """Gửi prompt đến ChatGPT Web Conversation endpoint qua curl_cffi và parse SSE stream"""
+        system_instruction = build_chatgpt_system_instruction(self.config)
+        full_prompt = f"{system_instruction}\n\n{prompt}"
+        if len(full_prompt.split()) > CHATGPT_WEB_MAX_WORDS:
+            raise ValueError("Nội dung gửi ChatGPT Web vượt giới hạn 5.000 từ/lượt.")
+
         if not self.access_token:
             self._refresh_access_token()
-
-        system_instruction = build_translation_system_instruction(self.config)
-        full_prompt = f"{system_instruction}\n\n{prompt}"
 
         # Map model name
         target_model = "auto"
@@ -1030,10 +1103,9 @@ class ChatGPTWebTranslator:
             return []
 
         total_items = len(original_items)
-        batch_size = int(getattr(self.config, "chatgpt_batch_size", 12) or 12)
-        batches = [original_items[i:i + batch_size] for i in range(0, total_items, batch_size)]
+        batches = build_chatgpt_batches(original_items, self.config)
         total_batches = len(batches)
-        logger.info(f"[Bước 3] Đang dịch {total_items} câu phụ đề bằng ChatGPT Web ({self.model_name}) - Chia {total_batches} đoạn ({batch_size} câu/đoạn)...")
+        logger.info(f"[Bước 3] Đang dịch {total_items} câu phụ đề bằng ChatGPT Web ({self.model_name}) - Chia {total_batches} đoạn (tối đa 5.000 từ/lượt, gồm yêu cầu và bối cảnh)...")
 
         # Trích xuất toàn cảnh kịch bản video tiếng Trung để ChatGPT nắm trọn vẹn cốt truyện & nhân vật
         story_lines = [f"[{it.index}] {it.text.strip()}" for it in original_items]
@@ -1046,6 +1118,7 @@ class ChatGPTWebTranslator:
 
         with tqdm(total=total_items, desc="[Bước 3] ChatGPT Dịch thuật SRT (Chia Đoạn)", leave=False) as pbar:
             for b_idx, batch in enumerate(batches, 1):
+                batch_context = fit_chatgpt_story_context(batch, full_story_context, self.config)
                 batch_res = translate_batch_resilient(
                     call_ai_fn=lambda p: self._call_chatgpt_web(p, timeout=120),
                     batch=batch,
@@ -1054,7 +1127,7 @@ class ChatGPTWebTranslator:
                     engine_name="ChatGPT Web",
                     target_language=get_target_language(self.config),
                     source_language=self.config.whisper_language,
-                    full_story_context=full_story_context
+                    full_story_context=batch_context
                 )
                 final_translated_items.extend(batch_res)
                 pbar.update(len(batch))

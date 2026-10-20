@@ -765,7 +765,7 @@ class PipelineConfig:
     whisper_server_url: str = field(default_factory=lambda: os.getenv("WHISPER_SERVER_URL", "http://localhost:8888"))
     
     # Batch Chunking & Translation Settings
-    chatgpt_batch_size: int = 12         # Kích thước đoạn SRT chia nhỏ tối ưu cho ChatGPT (10-12 câu/đoạn chống lỗi, chuẩn 100%)
+    chatgpt_batch_size: int = 0          # 0: tự chia theo trần 5.000 từ/lượt; >0: giới hạn thêm số câu/đoạn
     deepseek_batch_size: int = 30        # Kích thước đoạn SRT chia nhỏ cho DeepSeek API (25-30 câu/đoạn)
     
     # Translation Context & Topic (Chủ đề dịch thuật)

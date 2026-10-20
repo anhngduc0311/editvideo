@@ -485,7 +485,7 @@ class DouyinEditorApp(ctk.CTk):
 
         self.lbl_chatgpt_status = ctk.CTkLabel(
             tab_chatgpt,
-            text="Sử dụng phiên đăng nhập ChatGPT để dịch nội dung.",
+            text="Tối đa 5.000 từ/lượt, tự chia đoạn. Dịch tự nhiên, cuốn hút, giữ chân người xem và đúng ý gốc.",
             font=ctk.CTkFont(size=11),
             text_color="#39C6A3",
             wraplength=470,
