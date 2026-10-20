@@ -48,8 +48,8 @@ trong cấu hình Python để giới hạn thêm số câu mỗi đoạn; mặc
 
 ## Duyệt, hủy và tiếp tục
 
-- **Duyệt bản dịch trước khi tạo giọng**: bật mặc định. Sửa lời dịch ở cột bên phải,
-  giữ nguyên số câu và mốc thời gian, rồi chọn **Lưu & tạo giọng**.
+- **Tự động tạo giọng sau khi dịch**: giao diện chuyển thẳng sang tạo giọng,
+  không mở bảng duyệt bản dịch, kể cả khi cấu hình cũ đã bật duyệt.
 - **Hủy**: dừng render và ngừng bắt đầu thao tác mới. Request mạng hoặc mô hình đang chạy
   có thể phải kết thúc/timeout trước khi hủy hoàn toàn. Không khởi động tác vụ khác trong lúc chờ.
 - **Tiếp tục các bước đã hoàn tất**: bật mặc định. Chạy lại cùng video sẽ dùng lại dữ liệu

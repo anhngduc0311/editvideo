@@ -23,7 +23,6 @@ from config import BlurRegion, CookieConfig, PipelineConfig, SubtitleStyle, SUBT
 from pipeline import DouyinAutoPipeline
 from job_state import JobCancelled, check_cancelled
 from credential_store import seal_secrets, open_secrets
-from subtitle_review import wait_for_translation_review
 from roi_selector import VisualROISelectorDialog
 from studio_theme import COLORS, apply_studio_theme
 from urllib.parse import urlparse
@@ -113,7 +112,6 @@ class DouyinEditorApp(ctk.CTk):
         self.saved_translation_mode = "Tiếng Trung → Tiếng Việt"
         self.saved_voice = VOICE_PRESETS["co_gai_hoat_ngon"]["name"]
         self.saved_enable_subtitles = True
-        self.saved_review_translation = True
         self.saved_resume = True
         if CONFIG_FILE.exists():
             try:
@@ -139,7 +137,6 @@ class DouyinEditorApp(ctk.CTk):
                 self.saved_translation_mode = data.get("translation_mode", self.saved_translation_mode)
                 self.saved_voice = data.get("voice_preset", self.saved_voice)
                 self.saved_enable_subtitles = data.get("enable_subtitles", True)
-                self.saved_review_translation = data.get("review_translation", True)
                 self.saved_resume = data.get("resume", True)
                 self.saved_blur_x = data.get("blur_x", 293)
                 self.saved_blur_y = data.get("blur_y", 517)
@@ -203,7 +200,7 @@ class DouyinEditorApp(ctk.CTk):
                 "translation_mode": self.cmb_translation_mode.get() if hasattr(self, "cmb_translation_mode") else self.saved_translation_mode,
                 "voice_preset": self.cmb_voice.get() if hasattr(self, "cmb_voice") else self.saved_voice,
                 "enable_subtitles": enable_subs_val,
-                "review_translation": bool(self.chk_review_translation.get()) if hasattr(self, "chk_review_translation") else self.saved_review_translation,
+                "review_translation": False,
                 "resume": bool(self.chk_resume.get()) if hasattr(self, "chk_resume") else self.saved_resume,
                 "blur_x": bx,
                 "blur_y": by,
@@ -294,11 +291,6 @@ class DouyinEditorApp(ctk.CTk):
         self.cmb_translation_mode.set(self.saved_translation_mode if self.saved_translation_mode in TRANSLATION_MODES
                                       else "Tiếng Trung → Tiếng Việt")
         self.cmb_translation_mode.pack(side="left")
-        self.chk_review_translation = ctk.CTkCheckBox(url_card, text="Duyệt bản dịch trước khi tạo giọng")
-        self.chk_review_translation.select()
-        if not self.saved_review_translation:
-            self.chk_review_translation.deselect()
-        self.chk_review_translation.pack(anchor="w", padx=12, pady=(0, 8))
         self.chk_resume = ctk.CTkCheckBox(url_card, text="Tiếp tục các bước đã hoàn tất khi chạy lại")
         self.chk_resume.select()
         if not self.saved_resume:
@@ -2036,7 +2028,6 @@ class DouyinEditorApp(ctk.CTk):
         self.is_running = True
         self.cancel_event.clear()
         self.btn_cancel.configure(state="normal")
-        review_enabled = bool(self.chk_review_translation.get())
         self.btn_run.configure(text="Đang xử lý video…", state="disabled", fg_color="#6b7280")
         self.btn_play_video.configure(state="disabled")
         self.progress_bar.set(0.0)
@@ -2144,8 +2135,6 @@ class DouyinEditorApp(ctk.CTk):
                     douyin_url_or_text=raw_url,
                     progress_callback=self._update_step_status,
                     interactive_roi_callback=interactive_roi_hook if is_interactive_roi else None,
-                    review_subtitles_callback=(lambda directory, path: wait_for_translation_review(
-                        self, directory, path, self.cancel_event)) if review_enabled else None,
                     cancel_event=self.cancel_event,
                 )
                 self.last_output_video = final_video
