@@ -4,6 +4,47 @@ Dịch và lồng tiếng video YouTube/Douyin: Trung hoặc Anh → Việt ho�
 
 ## Cài đặt trên Windows
 
+### Dùng trên máy khác bằng một file EXE
+
+Sau khi build, chỉ cần chép `dist/EditVideoStudio-Setup.exe` sang máy Windows
+10/11 64-bit rồi mở file. Bộ cài tự cài vào tài khoản hiện tại, tạo shortcut
+Desktop và Start Menu, rồi tự mở **EditVideo Studio** khi cài xong.
+Máy nhận không cần cài Python, pip hoặc FFmpeg.
+Có thể cài không hiện trình hướng dẫn bằng
+`EditVideoStudio-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART`.
+
+Bản build kèm FFmpeg/ffprobe, Node.js cho YouTube, Whisper `small`, model tách giọng mặc định và
+model giọng Nhật OpenVoice hiện có. Tải video, dịch và TTS trực tuyến vẫn cần
+Internet và thông tin đăng nhập của người dùng. Model Whisper khác được tải
+khi chọn sử dụng. Cấu hình/cookie/API key cá nhân không được đưa vào bộ cài.
+
+Ứng dụng được cài trong `%LOCALAPPDATA%/Programs/EditVideoStudio`.
+Video xuất nằm trong `%LOCALAPPDATA%/EditVideoStudio/output`; dùng nút mở thư mục
+trong ứng dụng để truy cập. Cache/download/log cũng nằm trong thư mục dữ liệu
+`%LOCALAPPDATA%/EditVideoStudio`, được giữ lại khi gỡ cài đặt.
+
+### Tạo bộ cài trên máy phát triển
+
+Cài `requirements.txt`, sau đó `py -3 -m pip install pyinstaller==6.22.3`.
+Cài Node.js 22+ và [Inno Setup](https://jrsoftware.org/isdl.php) rồi chạy từ `douyin_editor`:
+
+```bat
+build_windows.bat --iscc "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+```
+
+Build yêu cầu đủ tài nguyên `tts/vendor/OpenVoice`, `tts/models/openvoice_v2`,
+ba file MP3 mẫu trong `tts`, model tách giọng trong `douyin_editor/models` và
+Whisper `small.pt` trong `%USERPROFILE%/.cache/whisper`. Script báo lỗi nếu thiếu.
+Build tự kiểm tra EXE: mở/đóng giao diện, chạy FFmpeg/ffprobe và nạp model OpenVoice
+trước khi tạo bộ cài. Dùng `--app-only` nếu chỉ muốn thư mục ứng dụng portable;
+khi đó phải chép toàn bộ `dist/EditVideoStudio`, gồm cả `_internal`.
+
+`packaging/verify_installer_flow.py` kiểm tra bước tự cài với payload nhỏ và
+Inno Setup tại `build/tools/InnoSetup/ISCC.exe`; script chạy bộ cài ở chế độ
+thường, xác nhận cài xong mà không cần bấm Install.
+
+Nên thử bộ cài trên máy Windows sạch trước khi phát hành rộng rãi.
+
 Môi trường kiểm tra thay đổi này: Python 3.13, CustomTkinter 6.0.0.
 Chạy `setup.bat` để tạo môi trường `.venv`, cài `requirements.txt` và kiểm tra runtime.
 Sau đó mở `run_gui.bat`; launcher ưu tiên Python trong `.venv`, rồi Python Launcher `py`.

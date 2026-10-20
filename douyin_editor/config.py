@@ -9,8 +9,10 @@ from typing import Optional
 
 # Tự động nạp FFmpeg vào PATH nếu có static_ffmpeg
 try:
-    import static_ffmpeg
-    static_ffmpeg.add_paths()
+    import shutil
+    if not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
+        import static_ffmpeg
+        static_ffmpeg.add_paths()
 except Exception:
     pass
 

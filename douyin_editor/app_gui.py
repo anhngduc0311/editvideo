@@ -1307,7 +1307,8 @@ class DouyinEditorApp(ctk.CTk):
                 from pydub import AudioSegment
                 from tts_synchronizer import create_tts_engine
 
-                tts_dir = pathlib.Path(__file__).parent.parent / "tts"
+                from app_paths import resource_root
+                tts_dir = resource_root() / "tts"
                 sample_file = None
 
                 selected_preset = next((p for p in VOICE_PRESETS.values() if p["name"] == chosen), {})

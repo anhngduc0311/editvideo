@@ -255,7 +255,9 @@ class WhisperTranscriber:
         """Chạy STT bằng mô hình Whisper cục bộ"""
         if self._model is None:
             logger.info(f"Đang tải Whisper model cục bộ: '{self.model_size}'...")
-            self._model = self._whisper_module.load_model(self.model_size)
+            from app_paths import resource_root
+            bundled = resource_root() / "whisper_models" / f"{self.model_size}.pt"
+            self._model = self._whisper_module.load_model(str(bundled) if bundled.is_file() else self.model_size)
 
         with tqdm(total=100, desc="[Bước 2.3] Local Whisper Speech-to-Text", leave=False) as pbar:
             result = self._model.transcribe(

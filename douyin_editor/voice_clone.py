@@ -15,7 +15,8 @@ import threading
 import wave
 
 logger = logging.getLogger(__name__)
-ASSET_DIR = Path(__file__).resolve().parent.parent / "tts"
+from app_paths import resource_root
+ASSET_DIR = resource_root() / "tts"
 
 
 class JapaneseCloneTTSEngine:

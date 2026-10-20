@@ -85,6 +85,10 @@ def download_model(
     models_dir.mkdir(parents=True, exist_ok=True)
     info = MODELS_DATA[model_key]
     dest_path = models_dir / info["filename"]
+    from app_paths import resource_root
+    bundled = resource_root() / "models" / info["filename"]
+    if bundled.is_file() and bundled.stat().st_size > 10_000_000:
+        return bundled
 
     # Kiểm tra file mô hình sẵn có
     if dest_path.exists() and dest_path.stat().st_size > 10_000_000:
@@ -554,7 +558,8 @@ class VocalSeparator:
 
     def __init__(self, config: Any):
         self.config = config
-        models_dir = Path(__file__).parent / "models"
+        from app_paths import model_dir
+        models_dir = model_dir()
         self.engine = VocalSeparatorEngine(models_dir=models_dir)
 
     def slowdown_audio(
