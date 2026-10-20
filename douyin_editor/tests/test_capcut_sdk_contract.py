@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config import PipelineConfig
 from pydub import AudioSegment
 from transcriber import SubtitleItem
-from tts_synchronizer import CapCutTTSEngine, VietnameseTTSSynchronizer, TTSServiceError
+from tts_synchronizer import CapCutTTSEngine, VietnameseTTSSynchronizer, TTSServiceError, TTSTaskError
 
 
 def response(data, status=200):
@@ -79,6 +79,69 @@ class CapCutSDKContractTests(unittest.TestCase):
             with self.assertRaisesRegex(TTSServiceError, "System busy"):
                 synchronizer.generate_and_sync([cue], 2, Path(directory) / "audio.wav")
         provider.synthesize_phrases.assert_called_once()
+
+    def test_failed_task_is_recoverable_and_includes_server_reason(self):
+        engine, transport = self.engine_with_transport()
+        transport.post.side_effect = [
+            response({"ret": 0, "data": {"tasks": [{"id": "task", "token": "private-token"}]}}),
+            response({"ret": 0, "data": {"tasks": [{"status": "failed", "token": "private-token",
+                "payload": json.dumps({"error_code": 1234, "message": "Text too long"})}]}}),
+        ]
+        with patch("tts_synchronizer.time.sleep"):
+            with self.assertRaises(TTSTaskError) as caught:
+                engine.synthesize_phrases(["Xin chào."], max_retries=1)
+        self.assertIn("1234", str(caught.exception))
+        self.assertIn("Text too long", str(caught.exception))
+        self.assertNotIn("private-token", str(caught.exception))
+
+    def test_rejected_batch_splits_and_caches_successful_phrases(self):
+        buffer = io.BytesIO()
+        AudioSegment.silent(duration=100).export(buffer, format="wav")
+        provider = Mock()
+        calls = []
+        def synthesize(**kwargs):
+            texts = kwargs["texts"]
+            calls.append(texts)
+            if len(texts) > 1:
+                raise TTSTaskError("Task failed")
+            return [(texts[0], buffer.getvalue(), 100)]
+        provider.synthesize_phrases.side_effect = synthesize
+        with patch("tts_synchronizer.create_tts_engine", return_value=provider):
+            synchronizer = VietnameseTTSSynchronizer(PipelineConfig())
+        cues = [SubtitleItem(i, i - 1, i, "", "", f"Câu {i}.") for i in range(1, 5)]
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "audio.wav"
+            _, result = synchronizer.generate_and_sync(cues, 4, target)
+            self.assertEqual([cue.text for cue in result], [cue.text for cue in cues])
+            self.assertEqual(len(list((target.parent / "tts_phrases").glob("*.wav"))), 4)
+            self.assertEqual(sum(len(texts) == 1 for texts in calls), 4)
+            provider.synthesize_phrases.reset_mock()
+            synchronizer.generate_and_sync(cues, 4, target)
+            provider.synthesize_phrases.assert_not_called()
+
+    def test_service_error_after_split_keeps_completed_half_for_resume(self):
+        buffer = io.BytesIO()
+        AudioSegment.silent(duration=100).export(buffer, format="wav")
+        provider = Mock()
+        def synthesize(**kwargs):
+            texts = kwargs["texts"]
+            if len(texts) > 1:
+                raise TTSTaskError("Task failed")
+            if texts == ["Câu 2."]:
+                raise TTSServiceError("HTTP 403")
+            return [(texts[0], buffer.getvalue(), 100)]
+        provider.synthesize_phrases.side_effect = synthesize
+        with patch("tts_synchronizer.create_tts_engine", return_value=provider):
+            synchronizer = VietnameseTTSSynchronizer(PipelineConfig())
+        cues = [SubtitleItem(i, i - 1, i, "", "", f"Câu {i}.") for i in range(1, 10)]
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "audio.wav"
+            with self.assertRaisesRegex(TTSServiceError, "403"):
+                synchronizer.generate_and_sync(cues, 9, target)
+            self.assertFalse(target.exists())
+            self.assertEqual(len(list((target.parent / "tts_phrases").glob("*.wav"))), 1)
+            self.assertFalse(any("Câu 9." in call.kwargs["texts"]
+                                 for call in provider.synthesize_phrases.call_args_list))
 
 
 if __name__ == "__main__":

@@ -46,6 +46,28 @@ class TTSServiceError(RuntimeError):
     """A provider-wide failure should stop the job instead of retrying every cue."""
 
 
+class TTSTaskError(RuntimeError):
+    """A rejected synthesis task can be retried with fewer phrases."""
+
+
+def capcut_task_failure_detail(task: dict) -> str:
+    """Extract diagnostics without exposing task tokens or signed audio URLs."""
+    payload = task.get("payload") or {}
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (ValueError, TypeError):
+            payload = {}
+    parts = []
+    for source in (task, payload):
+        if isinstance(source, dict):
+            for key in ("code", "error_code", "errmsg", "error_msg", "message", "reason"):
+                value = source.get(key)
+                if isinstance(value, (str, int)) and value != "":
+                    parts.append(f"{key}={str(value)[:200]}")
+    return "; ".join(parts) or "Máy chủ không cung cấp mã lỗi chi tiết."
+
+
 def format_timestamp(seconds: float) -> str:
     """Chuyển đổi số giây (float) sang định dạng SRT: HH:MM:SS,mmm"""
     if seconds < 0:
@@ -145,7 +167,8 @@ class CapCutTTSEngine:
                             completed = True
                             break
                         elif status in {"failed", "error", "cancelled", "canceled"}:
-                            raise RuntimeError("CapCut báo tác vụ tạo giọng thất bại.")
+                            raise TTSTaskError("CapCut báo tác vụ tạo giọng thất bại. "
+                                               + capcut_task_failure_detail(t_obj))
 
                 if not completed or not payload_data:
                     raise TimeoutError("CapCut TTS polling timed out")
@@ -209,6 +232,8 @@ class CapCutTTSEngine:
                     detail = str(e)[:200]
                 message = f"CapCut TTS{f' (HTTP {status_code})' if status_code else ''}: {detail}"
                 logger.warning("Lần thử %s/%s: %s", attempt, max_retries, message)
+                if isinstance(e, TTSTaskError):
+                    raise
                 if attempt == max_retries or status_code in (401, 403):
                     raise TTSServiceError(message + " Audio đã tạo được giữ lại; chạy tiếp sau khi khắc phục.") from e
                 time.sleep(1.5)
@@ -379,9 +404,10 @@ class VietnameseTTSSynchronizer:
         if not valid_items:
             raise RuntimeError("Không có câu phụ đề hợp lệ để lồng tiếng. Hãy kiểm tra bản dịch.")
 
-        # 2. Gửi từng batch câu hoàn chỉnh đến CapCut TTS để sinh giọng nói tự nhiên, mượt mà
-        # 2. Gửi batch câu (lên tới 40 câu/lần) đến CapCut TTS để sinh giọng nói siêu tốc
-        batch_size = 40
+        # Smaller, serial CapCut tasks reduce request pressure. Task failures
+        # split adaptively; authentication/service failures still stop the job.
+        is_clone = get_voice_preset(self.tts_config.voice).get("provider") == "openvoice"
+        batch_size = 40 if is_clone else 8
         audio_dict: Dict[int, AudioSegment] = {}
         cache_dir = output_audio_path.parent / "tts_phrases"
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -423,7 +449,17 @@ class VietnameseTTSSynchronizer:
                 audio_dict[orig_idx] = seg
             except Exception:
                 pending.append((orig_idx, item, text))
-        batches = [pending[i:i + batch_size] for i in range(0, len(pending), batch_size)]
+        batches = []
+        batch = []
+        batch_chars = 0
+        for item in pending:
+            if batch and (len(batch) >= batch_size or (not is_clone and batch_chars + len(item[2]) > 1500)):
+                batches.append(batch)
+                batch, batch_chars = [], 0
+            batch.append(item)
+            batch_chars += len(item[2])
+        if batch:
+            batches.append(batch)
 
         def _synthesize_batch_worker(batch_data):
             check_cancelled(self.cancel_event)
@@ -433,9 +469,21 @@ class VietnameseTTSSynchronizer:
                 results = self.engine.synthesize_phrases(
                     texts=b_texts, voice=self.tts_config.voice,
                     resource_id=self.tts_config.resource_id, rate=self.tts_config.rate,
-                    max_retries=1)
+                    max_retries=2)
             except (JobCancelled, TTSServiceError):
                 raise
+            except TTSTaskError as error:
+                if len(b_items) > 1:
+                    logger.warning("CapCut từ chối đoạn %s câu; chia nhỏ và thử lại: %s", len(b_items), error)
+                    midpoint = len(b_items) // 2
+                    # Persist successful halves immediately, even if a later
+                    # half encounters a service failure or cancellation.
+                    for half in (b_items[:midpoint], b_items[midpoint:]):
+                        half_items, half_results = _synthesize_batch_worker(half)
+                        accept_results(half_items, half_results)
+                    return b_items, []
+                logger.warning("CapCut chưa tạo được câu %s, sẽ thử lại: %s", b_items[0][1].index, error)
+                results = []
             except Exception as error:
                 logger.warning("TTS batch lỗi, sẽ thử lại từng câu: %s", error)
                 results = []
@@ -444,8 +492,14 @@ class VietnameseTTSSynchronizer:
 
         with tqdm(total=len(valid_items), desc="[Bước 4.1] CapCut TTS Sinh Giọng Đầy Đủ Câu", leave=False) as pbar:
             if batches:
-                with ThreadPoolExecutor(max_workers=min(3, len(batches))) as pool:
-                    for b_items, results in pool.map(_synthesize_batch_worker, batches):
+                if is_clone:
+                    with ThreadPoolExecutor(max_workers=min(3, len(batches))) as pool:
+                        for b_items, results in pool.map(_synthesize_batch_worker, batches):
+                            accept_results(b_items, results)
+                            pbar.update(len(b_items))
+                else:
+                    for batch in batches:
+                        b_items, results = _synthesize_batch_worker(batch)
                         accept_results(b_items, results)
                         pbar.update(len(b_items))
             for _ in range(2):

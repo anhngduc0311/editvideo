@@ -57,6 +57,9 @@ trong cấu hình Python để giới hạn thêm số câu mỗi đoạn; mặc
   Bỏ chọn để chạy lại các bước; cache audio từng câu vẫn được dùng nếu nội dung/giọng không đổi.
 - TTS thiếu/hỏng audio được thử lại riêng từng câu. Sau khi hết lượt thử, tác vụ báo lỗi
   và giữ các audio thành công để lần sau không tạo lại.
+  CapCut gửi tuần tự tối đa 8 câu/đoạn và ưu tiên chia trước khi vượt 1.500 ký tự;
+  tác vụ bị từ chối sẽ tự chia nhỏ để thử lại. Lỗi đăng nhập hoặc dịch vụ vẫn dừng
+  quy trình và giữ các audio đã tạo, không xuất bản lồng tiếng thiếu câu.
 - Lời đọc chỉ tăng tốc tối đa 1,25 lần. Câu dài hơn khoảng chia ước lượng được căn lại
   theo độ dài audio thực, tận dụng khoảng nghỉ và tránh chồng câu. Phụ đề đi cùng lời đọc;
   thời gian trở về mốc nguồn khi gặp khoảng nghỉ đủ dài. Nếu tổng lời đọc dài hơn video,
