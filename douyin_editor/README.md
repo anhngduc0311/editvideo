@@ -10,6 +10,9 @@ Sau khi build, chỉ cần chép `dist/EditVideoStudio-Setup.exe` sang máy Wind
 10/11 64-bit rồi mở file. Bộ cài tự cài vào tài khoản hiện tại, tạo shortcut
 Desktop và Start Menu, rồi tự mở **EditVideo Studio** khi cài xong.
 Máy nhận không cần cài Python, pip hoặc FFmpeg.
+Cập nhật 1.0.1: các tiến trình FFmpeg, ffprobe, Node và tiến trình con của thư viện
+chạy nền, tránh cửa sổ CMD nhấp nháy khi mở ứng dụng hoặc xử lý video. Đóng ứng dụng
+và chạy lại bộ cài mới để cập nhật.
 Có thể cài không hiện trình hướng dẫn bằng
 `EditVideoStudio-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART`.
 

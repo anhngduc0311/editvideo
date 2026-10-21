@@ -17,7 +17,7 @@ datas += copy_metadata("yt-dlp", recursive=True)
 
 a = Analysis([str(root / "desktop_entry.py")], pathex=[str(root), str(vendor)],
              binaries=binaries, datas=datas, hiddenimports=hiddenimports,
-             hookspath=[], runtime_hooks=[],
+             hookspath=[], runtime_hooks=[str(root / "packaging/windowless_subprocess_hook.py")],
              excludes=["IPython", "pytest", "tensorboard", "matplotlib", "pandas", "torchvision"],
              noarchive=False)
 pyz = PYZ(a.pure)
